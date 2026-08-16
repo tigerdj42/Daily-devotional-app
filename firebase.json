@@ -21,15 +21,10 @@
         ]
       },
       {
-        "source": "/firebase-config.js",
+        "comment": "No filename hashing here, so Firebase Hosting's default max-age=3600 would serve stale app code for up to an hour after a deploy. 'no-cache' still allows 304s — it just forces revalidation.",
+        "source": "**/*.@(js|css|html|json)",
         "headers": [
-          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
-        ]
-      },
-      {
-        "source": "/manifest.json",
-        "headers": [
-          { "key": "Cache-Control", "value": "no-cache" }
+          { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
         ]
       }
     ]
