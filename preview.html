@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daily Devotional App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300&display=swap" rel="stylesheet">
+  <style>
+    /* ── TOKENS ──────────────────────────────────── */
+    :root {
+      --bg:           #FAF8F4;
+      --surface:      #FFFFFF;
+      --surface-2:    #F5F1EA;
+      --gold:         #C4A46B;
+      --gold-soft:    #EDD9B0;
+      --gold-bg:      #FBF5E8;
+      --border:       #EDE8DC;
+      --text-1:       #2C2825;
+      --text-2:       #7A7060;
+      --text-3:       #B0A898;
+      --missed:       #C0674A;
+      --missed-bg:    #FDF0EC;
+      --missed-border:#EAC4B5;
+      --done:         #5A8A6A;
+      --overlay:      rgba(30,25,18,0.45);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg:#1C1A17;--surface:#242018;--surface-2:#2C2820;
+        --gold:#C4A46B;--gold-soft:#5A4820;--gold-bg:#2A2210;
+        --border:#38332A;--text-1:#E8E0D4;--text-2:#A09080;--text-3:#6A6050;
+        --missed:#D07858;--missed-bg:#2A1A10;--missed-border:#5A3020;
+        --done:#6A9A7A;--overlay:rgba(0,0,0,0.65);
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg:#1C1A17;--surface:#242018;--surface-2:#2C2820;
+      --gold:#C4A46B;--gold-soft:#5A4820;--gold-bg:#2A2210;
+      --border:#38332A;--text-1:#E8E0D4;--text-2:#A09080;--text-3:#6A6050;
+      --missed:#D07858;--missed-bg:#2A1A10;--missed-border:#5A3020;
+      --done:#6A9A7A;--overlay:rgba(0,0,0,0.65);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── PREVIEW SWITCHER ───────────────────────── */
+    #preview-switcher {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      height: 48px; background: #111; border-bottom: 1px solid #2A2A2A;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 20px; gap: 16px;
+    }
+    .sw-label {
+      font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600;
+      letter-spacing: 0.1em; text-transform: uppercase; color: #555;
+    }
+    .sw-tabs { display: flex; gap: 4px; }
+    .sw-tab {
+      padding: 6px 16px; border-radius: 8px; border: 1px solid #333;
+      background: transparent; color: #777; font-family: 'Inter', sans-serif;
+      font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s;
+    }
+    .sw-tab.active { background: #FBF5E8; border-color: #C4A46B; color: #2C2825; font-weight: 600; }
+    .sw-tab:not(.active):hover { background: #1C1C1E; color: #999; }
+    .sw-hint { font-size: 11px; color: #444; font-family: 'Inter', sans-serif; }
+
+    /* ── OUTER STAGE (page body below switcher) ─── */
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text-1);
+    }
+    #stage {
+      padding-top: 48px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── APP ROOT ─────────────────────────────────
+       In desktop mode: fills remaining height.
+       In mobile mode: becomes a phone frame.        */
+    #app-root {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    /* ── MOBILE PREVIEW STAGE ─────────────────── */
+    body.mobile-preview {
+      background: #0D0D0D;
+    }
+    body.mobile-preview #stage {
+      height: auto;
+      min-height: 100vh;
+      align-items: center;
+      padding-bottom: 48px;
+    }
+    body.mobile-preview #app-root {
+      flex: none;
+      width: 393px;
+      height: 852px;
+      border-radius: 50px;
+      border: 11px solid #2C2C2E;
+      box-shadow:
+        0 0 0 1px #444,
+        0 0 0 2px #111,
+        0 40px 120px rgba(0,0,0,0.85),
+        inset 0 1px 0 rgba(255,255,255,0.08);
+      margin-top: 24px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Simulated status bar area (mobile only) */
+    .status-bar {
+      display: none;
+      height: 50px;
+      background: var(--surface);
+      flex-shrink: 0;
+      align-items: flex-end;
+      padding: 0 24px 8px;
+      justify-content: space-between;
+      position: relative;
+      z-index: 10;
+    }
+    body.mobile-preview .status-bar { display: flex; }
+    .status-time { font-size: 15px; font-weight: 600; color: var(--text-1); letter-spacing: -0.3px; }
+    .status-icons {
+      display: flex; gap: 6px; align-items: center;
+    }
+    .status-icons svg { fill: var(--text-1); }
+    /* Dynamic Island pill */
+    .status-bar::after {
+      content: '';
+      position: absolute;
+      top: 10px; left: 50%; transform: translateX(-50%);
+      width: 120px; height: 34px;
+      background: #000;
+      border-radius: 20px;
+    }
+
+    /* Home indicator */
+    .home-indicator {
+      display: none;
+      height: 34px; background: var(--surface);
+      flex-shrink: 0; align-items: center; justify-content: center;
+    }
+    body.mobile-preview .home-indicator { display: flex; }
+    .home-bar {
+      width: 134px; height: 5px; border-radius: 3px;
+      background: var(--text-3); opacity: 0.4;
+    }
+
+    /* ── MOBILE OVERLAY (drawer backdrop) ──────── */
+    .mobile-overlay {
+      display: none;
+      position: absolute; inset: 0; z-index: 40;
+      background: rgba(0,0,0,0.45);
+    }
+    body.mobile-preview .mobile-overlay { display: block; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
+    body.mobile-preview .mobile-overlay.open { opacity: 1; pointer-events: all; }
+
+    /* ── APP HEADER ──────────────────────────────── */
+    .app-header {
+      height: 54px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid var(--border); background: var(--surface);
+    }
+
+    /* Desktop header parts */
+    .header-logo-block {
+      width: 260px; height: 100%;
+      display: flex; align-items: center; padding: 0 20px;
+      border-right: 1px solid var(--border); gap: 10px; flex-shrink: 0;
+    }
+    .logo-mark {
+      width: 28px; height: 28px; border-radius: 8px; background: var(--gold);
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-size: 14px; flex-shrink: 0;
+    }
+    .logo-text { display: flex; flex-direction: column; gap: 1px; }
+    .app-title { font-family: Georgia, serif; font-size: 14px; color: var(--text-1); font-weight: normal; line-height: 1; }
+    .app-subtitle { font-size: 10px; color: var(--text-3); line-height: 1; }
+    .header-day-info {
+      padding: 0 20px; display: flex; align-items: center; gap: 10px; flex: 1;
+    }
+    .header-day-badge {
+      padding: 3px 10px; background: var(--gold); color: white;
+      border-radius: 20px; font-size: 11px; font-weight: 600;
+    }
+    .header-day-text { font-size: 13px; color: var(--text-2); }
+
+    /* Mobile-only header parts */
+    .hamburger-btn {
+      display: none;
+      width: 44px; height: 44px; margin-left: 8px;
+      border: none; background: transparent; cursor: pointer;
+      flex-shrink: 0; align-items: center; justify-content: center;
+      color: var(--text-1); flex-direction: column; gap: 5px; border-radius: 10px;
+    }
+    .hamburger-btn:active { background: var(--surface-2); }
+    .ham-line { display: block; width: 20px; height: 2px; background: var(--text-1); border-radius: 1px; }
+    .mobile-header-center {
+      display: none; flex: 1; flex-direction: column;
+      align-items: center; justify-content: center; gap: 1px;
+    }
+    .mobile-header-title { font-family: Georgia, serif; font-size: 16px; color: var(--text-1); font-weight: normal; }
+    .mobile-header-sub { font-size: 10px; color: var(--text-3); }
+
+    .header-right { display: flex; align-items: center; gap: 8px; padding-right: 16px; }
+    .icon-btn {
+      width: 36px; height: 36px; border-radius: 50%;
+      border: 1px solid var(--border); background: transparent;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      color: var(--text-2); font-size: 15px; transition: background 0.15s;
+    }
+    .icon-btn:hover { background: var(--surface-2); }
+
+    /* Mobile header overrides */
+    body.mobile-preview .header-logo-block,
+    body.mobile-preview .header-day-info { display: none; }
+    body.mobile-preview .hamburger-btn { display: flex; }
+    body.mobile-preview .mobile-header-center { display: flex; }
+    body.mobile-preview .app-header { height: 54px; padding: 0; }
+
+    /* ── LAYOUT BODY ─────────────────────────────── */
+    .app-body { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── SIDEBAR ─────────────────────────────────── */
+    .sidebar {
+      width: 260px; flex-shrink: 0;
+      border-right: 1px solid var(--border); background: var(--surface);
+      display: flex; flex-direction: column; overflow: hidden;
+      transition: transform 0.25s ease;
+    }
+
+    /* Mobile: sidebar becomes a slide-in drawer */
+    body.mobile-preview .sidebar {
+      position: absolute; left: 0; top: 0; bottom: 0; z-index: 50;
+      width: 280px; height: 100%;
+      transform: translateX(-100%);
+      box-shadow: 4px 0 24px rgba(0,0,0,0.15);
+    }
+    body.mobile-preview .sidebar.drawer-open { transform: translateX(0); }
+
+    /* Close button inside sidebar (mobile only) */
+    .sidebar-close-row {
+      display: none;
+      padding: 12px 16px 4px; justify-content: space-between; align-items: center;
+    }
+    body.mobile-preview .sidebar-close-row { display: flex; }
+    .sidebar-close-btn {
+      width: 30px; height: 30px; border-radius: 50%;
+      border: 1px solid var(--border); background: transparent;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      color: var(--text-3); font-size: 14px;
+    }
+    .sidebar-close-label { font-size: 13px; font-weight: 600; color: var(--text-1); }
+
+    .nt-progress { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .progress-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7px; }
+    .progress-label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-3); }
+    .progress-frac { font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+    .bar { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .bar-fill { height: 100%; background: var(--gold); border-radius: 3px; }
+    .progress-sub { margin-top: 6px; font-size: 10px; color: var(--text-3); }
+
+    .sidebar-list { flex: 1; overflow-y: auto; padding-bottom: 16px; }
+    .sidebar-list::-webkit-scrollbar { width: 4px; }
+    .sidebar-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .book-group { margin-top: 4px; }
+    .book-group-header { padding: 10px 16px 5px; }
+    .book-group-name {
+      font-family: Georgia, serif; font-size: 9.5px; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--text-3); font-weight: normal;
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px;
+    }
+    .book-group-count { font-family: 'Inter', sans-serif; font-size: 9px; color: var(--text-3); }
+    .book-bar { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .book-bar-fill { height: 100%; border-radius: 2px; }
+
+    .day-row {
+      display: flex; align-items: center; gap: 9px;
+      padding: 7px 16px; cursor: pointer; position: relative; transition: background 0.1s;
+    }
+    .day-row:hover { background: var(--surface-2); }
+    .day-row.is-active { background: var(--gold-bg); }
+    .day-row.is-active::before {
+      content: ''; position: absolute; left: 0; top: 4px; bottom: 4px;
+      width: 3px; background: var(--gold); border-radius: 0 2px 2px 0;
+    }
+    .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .dot-done   { background: var(--done); }
+    .dot-active { background: var(--gold); }
+    .dot-future { background: transparent; border: 1.5px solid var(--border); }
+    .dot-missed { background: var(--missed); }
+    .day-row-info { flex: 1; min-width: 0; }
+    .day-row-num { font-size: 9.5px; color: var(--text-3); font-variant-numeric: tabular-nums; line-height: 1; margin-bottom: 2px; }
+    .day-row-chaps { font-size: 11.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1; }
+    .day-row.is-active .day-row-chaps { color: var(--text-1); font-weight: 500; }
+
+    .milestone-chip {
+      margin: 5px 12px; padding: 7px 11px;
+      background: var(--gold-bg); border: 1px solid var(--gold-soft);
+      border-radius: 10px; display: flex; align-items: center; gap: 7px;
+    }
+    .milestone-chip-icon { font-size: 13px; flex-shrink: 0; }
+    .milestone-chip-text { font-size: 10.5px; color: #8A6830; font-weight: 500; line-height: 1.3; }
+
+    .sidebar-footer {
+      padding: 11px 14px; border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .user-pill { display: flex; align-items: center; gap: 7px; }
+    .user-av {
+      width: 26px; height: 26px; border-radius: 50%; background: var(--gold); color: white;
+      display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;
+    }
+    .user-av.wife { background: var(--done); }
+    .user-pill-name { font-size: 12px; color: var(--text-2); font-weight: 500; }
+
+    /* ── MAIN CONTENT ─────────────────────────────── */
+    .main-scroll { flex: 1; overflow-y: auto; background: var(--bg); }
+    .main-scroll::-webkit-scrollbar { width: 6px; }
+    .main-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .main-inner { max-width: 700px; margin: 0 auto; padding: 36px 40px 80px; }
+
+    /* Mobile main adjustments */
+    body.mobile-preview .main-inner {
+      max-width: 100%; padding: 20px 18px 80px;
+    }
+
+    /* ── VOICE PLAYER BAR ─────────────────────────── */
+    .voice-bar {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 12px 16px; margin-bottom: 24px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    body.mobile-preview .voice-bar { border-radius: 14px; }
+    .voice-bar.hidden { display: none; }
+    .voice-bar-idle { justify-content: flex-start; }
+    .voice-bar-active { justify-content: space-between; }
+
+    .listen-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 18px; background: var(--gold); color: white;
+      border: none; border-radius: 24px;
+      font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
+      min-height: 44px;
+    }
+    .listen-btn:hover { background: #B8924C; }
+    .listen-hint { font-size: 12px; color: var(--text-3); }
+    body.mobile-preview .listen-hint { display: none; }
+    body.mobile-preview .listen-btn { flex: 1; justify-content: center; }
+
+    .voice-section-label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+    .voice-pulse {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--gold);
+      animation: pulse 1.4s ease-in-out infinite; flex-shrink: 0;
+    }
+    @keyframes pulse {
+      0%,100%{opacity:1;transform:scale(1);}
+      50%{opacity:0.4;transform:scale(0.7);}
+    }
+    .voice-pulse.paused { animation: none; opacity: 0.4; }
+    .voice-now-reading { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+    .voice-section-name { font-size: 13px; font-weight: 600; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .voice-progress-track { flex: 1; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    body.mobile-preview .voice-progress-track { display: none; }
+    .voice-progress-fill { height: 100%; background: var(--gold); border-radius: 2px; transition: width 0.4s ease; }
+    .voice-controls-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .voice-speed-select {
+      appearance: none; background: var(--surface-2); border: 1px solid var(--border);
+      color: var(--text-2); border-radius: 8px; padding: 5px 10px;
+      font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .voice-ctrl-btn {
+      width: 38px; height: 38px; border-radius: 50%;
+      border: 1px solid var(--border); background: var(--surface-2);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; color: var(--text-2); font-size: 15px;
+      transition: background 0.1s; min-height: 44px; min-width: 44px;
+    }
+    .voice-ctrl-btn:hover { background: var(--border); color: var(--text-1); }
+    .voice-ctrl-btn.stop-btn:hover { background: var(--missed-bg); border-color: var(--missed); color: var(--missed); }
+
+    /* Mobile voice active bar: rearranged for compact display */
+    body.mobile-preview .voice-bar-active {
+      flex-wrap: wrap; gap: 10px;
+    }
+    body.mobile-preview .voice-section-label { width: 100%; }
+    body.mobile-preview .voice-controls-right { margin-left: auto; }
+
+    /* ── DAY HEADER ───────────────────────────────── */
+    .day-header { margin-bottom: 24px; }
+    .day-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .day-badge { padding: 4px 12px; background: var(--gold); color: white; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .day-date { font-size: 14px; color: var(--text-3); }
+    .day-title { font-family: Georgia, serif; font-size: 30px; color: var(--text-1); font-weight: normal; line-height: 1.25; text-wrap: balance; }
+    body.mobile-preview .day-title { font-size: 24px; }
+    body.mobile-preview .day-date { font-size: 13px; }
+
+    /* ── CHAPTER SEP ──────────────────────────────── */
+    .chapter-sep { display: flex; align-items: center; gap: 14px; margin: 28px 0 18px; }
+    .chapter-sep-line { flex: 1; height: 1px; background: var(--border); }
+    .chapter-sep-label { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3); font-weight: 700; white-space: nowrap; }
+
+    /* ── BIBLE TEXT ───────────────────────────────── */
+    .bible-passage { font-family: Georgia, serif; font-size: 16px; line-height: 1.95; color: var(--text-1); }
+    body.mobile-preview .bible-passage { font-size: 15px; line-height: 1.85; }
+    .vn { font-family: 'Inter', sans-serif; font-size: 10px; font-weight: 700; color: var(--gold); vertical-align: super; margin-right: 1px; line-height: 0; }
+    .verse-ellipsis { display: block; font-size: 13px; color: var(--text-3); font-style: italic; font-family: 'Inter', sans-serif; margin: 6px 0 2px; }
+    .translation-note { margin-top: 8px; font-size: 11px; color: var(--text-3); font-style: italic; font-family: 'Inter', sans-serif; }
+
+    /* ── SECTION SEP ──────────────────────────────── */
+    .section-sep { display: flex; align-items: center; gap: 14px; margin: 36px 0 24px; }
+    .section-sep-line { flex: 1; height: 1px; background: var(--border); }
+    .section-sep-label { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3); font-weight: 700; }
+
+    /* ── COMMENTARY ───────────────────────────────── */
+    .commentary-stack { display: flex; flex-direction: column; gap: 12px; margin-bottom: 36px; }
+    .c-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px 22px; }
+    .c-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); margin-bottom: 8px; }
+    .c-body { font-size: 14.5px; line-height: 1.78; color: var(--text-2); }
+    body.mobile-preview .c-body { font-size: 14px; }
+
+    .kv-card {
+      background: var(--gold-bg); border: 1px solid var(--gold-soft);
+      border-radius: 16px; padding: 22px 24px; position: relative; overflow: hidden;
+    }
+    .kv-card::before {
+      content: '\201C'; font-family: Georgia, serif; font-size: 96px;
+      color: var(--gold); opacity: 0.15; position: absolute;
+      top: -20px; left: 14px; line-height: 1; pointer-events: none;
+    }
+    .kv-text { font-family: Georgia, serif; font-size: 18px; line-height: 1.6; color: var(--text-1); font-style: italic; margin-bottom: 10px; position: relative; }
+    body.mobile-preview .kv-text { font-size: 16px; }
+    .kv-ref { font-size: 12px; font-weight: 700; color: var(--gold); letter-spacing: 0.06em; }
+
+    .prayer-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-left: 3px solid var(--gold); border-radius: 0 16px 16px 0; padding: 18px 20px;
+    }
+
+    /* ── THOUGHTS OF THE DAY ──────────────────────── */
+    .thoughts-sep { display: flex; align-items: center; gap: 14px; margin: 0 0 20px; }
+    .thoughts-sep-line { flex: 1; height: 1px; background: var(--border); }
+    .thoughts-sep-label { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3); font-weight: 700; }
+
+    .thoughts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    /* MOBILE: stack vertically */
+    body.mobile-preview .thoughts-grid { grid-template-columns: 1fr; }
+
+    .thought-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 16px; }
+    .thought-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .thought-av {
+      width: 34px; height: 34px; border-radius: 50%; background: var(--gold); color: white;
+      display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0;
+    }
+    .thought-av.wife { background: var(--done); }
+    .thought-av-name { font-weight: 600; font-size: 14px; color: var(--text-1); line-height: 1; }
+    .thought-av-role { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+    .thought-textarea {
+      width: 100%; min-height: 100px; border: 1px solid var(--border); border-radius: 10px;
+      padding: 11px 13px; font-family: 'Inter', sans-serif; font-size: 14px;
+      color: var(--text-1); background: var(--bg); resize: vertical; line-height: 1.6; outline: none;
+    }
+    .thought-textarea::placeholder { color: var(--text-3); }
+    .thought-footer { display: flex; align-items: center; justify-content: flex-end; margin-top: 9px; gap: 10px; }
+    .thought-time { font-size: 10.5px; color: var(--text-3); }
+    .save-btn {
+      padding: 9px 20px; background: var(--gold); color: white; border: none;
+      border-radius: 22px; font-family: 'Inter', sans-serif; font-size: 13px;
+      font-weight: 600; cursor: pointer; min-height: 44px;
+    }
+    .save-btn:hover { background: #B8924C; }
+    .thought-read { font-size: 14px; line-height: 1.65; color: var(--text-2); font-style: italic; padding: 2px 0 6px; }
+    .thought-read-meta { font-size: 10.5px; color: var(--text-3); margin-top: 4px; }
+
+    /* ── SETTINGS MODAL ──────────────────────────── */
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 200;
+      background: var(--overlay);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s;
+    }
+    .modal-overlay.open { opacity: 1; pointer-events: all; }
+    .settings-modal {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
+      width: 400px; max-width: calc(100vw - 40px); max-height: 82vh; overflow-y: auto;
+      transform: translateY(12px) scale(0.98); transition: transform 0.2s;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+    }
+    body.mobile-preview .settings-modal {
+      width: calc(100% - 24px); max-width: 370px; border-radius: 20px;
+      max-height: 75vh;
+    }
+    .modal-overlay.open .settings-modal { transform: translateY(0) scale(1); }
+    .settings-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 22px 14px; border-bottom: 1px solid var(--border);
+    }
+    .settings-title { font-family: Georgia, serif; font-size: 18px; color: var(--text-1); font-weight: normal; }
+    .modal-close {
+      width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border);
+      background: transparent; cursor: pointer; display: flex; align-items: center;
+      justify-content: center; color: var(--text-3); font-size: 16px;
+    }
+    .modal-close:hover { background: var(--surface-2); color: var(--text-1); }
+    .settings-section { padding: 16px 22px; border-bottom: 1px solid var(--border); }
+    .settings-section:last-child { border-bottom: none; }
+    .settings-section-label { font-size: 9.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-3); margin-bottom: 12px; }
+    .settings-field { margin-bottom: 12px; }
+    .settings-field:last-child { margin-bottom: 0; }
+    .field-label { font-size: 12px; color: var(--text-2); font-weight: 500; margin-bottom: 5px; }
+    .field-input {
+      width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px;
+      background: var(--bg); color: var(--text-1); font-family: 'Inter', sans-serif; font-size: 14px; outline: none;
+    }
+    .field-input:focus { border-color: var(--gold); }
+    .role-buttons { display: flex; gap: 8px; }
+    .role-btn {
+      flex: 1; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px;
+      background: var(--bg); color: var(--text-2); font-family: 'Inter', sans-serif;
+      font-size: 13px; font-weight: 500; cursor: pointer; min-height: 44px;
+    }
+    .role-btn.selected { background: var(--gold-bg); border-color: var(--gold); color: var(--text-1); font-weight: 600; }
+    .settings-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; }
+    .settings-row + .settings-row { border-top: 1px solid var(--border); }
+    .settings-row-label { font-size: 14px; color: var(--text-1); font-weight: 500; }
+    .settings-row-desc { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+    .toggle-input { display: none; }
+    .toggle-label {
+      display: block; width: 46px; height: 28px; background: var(--border); border-radius: 14px;
+      cursor: pointer; position: relative; transition: background 0.2s; flex-shrink: 0;
+    }
+    .toggle-label::after {
+      content: ''; position: absolute; width: 22px; height: 22px; border-radius: 50%;
+      background: white; top: 3px; left: 3px; transition: transform 0.2s;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    }
+    .toggle-input:checked + .toggle-label { background: var(--gold); }
+    .toggle-input:checked + .toggle-label::after { transform: translateX(18px); }
+    .about-block { color: var(--text-3); font-size: 13px; line-height: 1.7; }
+    .about-block strong { color: var(--text-2); }
+  </style>
+</head>
+<body>
+
+  <!-- ── PREVIEW SWITCHER ──────────────────────── -->
+  <div id="preview-switcher">
+    <span class="sw-label">Preview</span>
+    <div class="sw-tabs">
+      <button id="btnDesktop" class="sw-tab active" onclick="setPreviewMode('desktop')">🖥 Desktop</button>
+      <button id="btnMobile" class="sw-tab" onclick="setPreviewMode('mobile')">📱 Mobile</button>
+    </div>
+    <span class="sw-hint">Interact directly — dark mode &amp; voice work in browser</span>
+  </div>
+
+  <!-- ── STAGE ─────────────────────────────────── -->
+  <div id="stage">
+
+    <!-- ── APP ROOT ─────────────────────────────── -->
+    <div id="app-root">
+
+      <!-- Status bar (mobile visual only) -->
+      <div class="status-bar">
+        <span class="status-time">9:41</span>
+        <div class="status-icons">
+          <svg width="16" height="12" viewBox="0 0 16 12"><rect x="0" y="3" width="3" height="9" rx="1" opacity="0.3"/><rect x="4" y="2" width="3" height="10" rx="1" opacity="0.5"/><rect x="8" y="1" width="3" height="11" rx="1" opacity="0.7"/><rect x="12" y="0" width="3" height="12" rx="1"/></svg>
+          <svg width="16" height="12" viewBox="0 0 16 12"><path d="M8 2C5.5 2 3.3 3.1 1.8 4.8L0 3C2 1.1 4.8 0 8 0s6 1.1 8 3l-1.8 1.8C12.7 3.1 10.5 2 8 2z" opacity="0.4"/><path d="M8 6c-1.4 0-2.6.6-3.5 1.5L3 6C4.3 4.7 6.1 4 8 4s3.7.7 5 2L11.5 7.5C10.6 6.6 9.4 6 8 6z" opacity="0.7"/><circle cx="8" cy="10" r="2"/></svg>
+          <svg width="25" height="12" viewBox="0 0 25 12"><rect x="0" y="1" width="22" height="10" rx="3" stroke="currentColor" stroke-width="1.2" fill="none"/><rect x="22.5" y="3.5" width="2" height="5" rx="1" fill="currentColor" opacity="0.4"/><rect x="1.5" y="2.5" width="16" height="7" rx="2" fill="currentColor"/></svg>
+        </div>
+      </div>
+
+      <!-- Mobile menu overlay -->
+      <div class="mobile-overlay" id="mobileOverlay" onclick="closeMobileMenu()"></div>
+
+      <!-- ── HEADER ────────────────────────────── -->
+      <header class="app-header">
+        <!-- Mobile: hamburger -->
+        <button class="hamburger-btn" onclick="openMobileMenu()">
+          <span class="ham-line"></span>
+          <span class="ham-line"></span>
+          <span class="ham-line"></span>
+        </button>
+
+        <!-- Desktop: full left block -->
+        <div class="header-left" style="display:flex;align-items:center;height:100%;">
+          <div class="header-logo-block">
+            <div class="logo-mark">✝</div>
+            <div class="logo-text">
+              <span class="app-title">Daily Devotional</span>
+              <span class="app-subtitle">Reading the Bible Cover to Cover</span>
+            </div>
+          </div>
+          <div class="header-day-info">
+            <span class="header-day-badge">Day 1</span>
+            <span class="header-day-text">Matthew 1 &amp; 2 · Mon 17 Aug 2026</span>
+          </div>
+        </div>
+
+        <!-- Mobile: centred title -->
+        <div class="mobile-header-center">
+          <span class="mobile-header-title">Daily Devotional</span>
+          <span class="mobile-header-sub">Day 1 · Matthew 1 &amp; 2</span>
+        </div>
+
+        <div class="header-right">
+          <button class="icon-btn" onclick="openSettings()" title="Settings">⚙</button>
+        </div>
+      </header>
+
+      <!-- ── APP BODY ───────────────────────────── -->
+      <div class="app-body">
+
+        <!-- SIDEBAR -->
+        <aside class="sidebar" id="sidebar">
+          <!-- Close button row (mobile) -->
+          <div class="sidebar-close-row">
+            <span class="sidebar-close-label">Menu</span>
+            <button class="sidebar-close-btn" onclick="closeMobileMenu()">✕</button>
+          </div>
+
+          <div class="nt-progress">
+            <div class="progress-row">
+              <span class="progress-label">New Testament</span>
+              <span class="progress-frac">2 / 260 chapters</span>
+            </div>
+            <div class="bar"><div class="bar-fill" style="width:0.8%"></div></div>
+            <div class="progress-sub">Day 1 of 130 · finishing ~24 Dec 2026</div>
+          </div>
+
+          <div class="sidebar-list">
+            <div class="book-group">
+              <div class="book-group-header">
+                <div class="book-group-name">Matthew <span class="book-group-count">28 chs · Days 1–14</span></div>
+                <div class="book-bar"><div class="book-bar-fill" style="width:7%;background:var(--gold)"></div></div>
+              </div>
+              <div class="day-row is-active" onclick="closeMobileMenu()">
+                <div class="dot dot-active"></div>
+                <div class="day-row-info"><div class="day-row-num">Day 1 · Mon 17 Aug</div><div class="day-row-chaps">Matthew 1 &amp; 2</div></div>
+              </div>
+              <div class="day-row"><div class="dot dot-future"></div><div class="day-row-info"><div class="day-row-num">Day 2 · Tue 18 Aug</div><div class="day-row-chaps">Matthew 3 &amp; 4</div></div></div>
+              <div class="day-row"><div class="dot dot-future"></div><div class="day-row-info"><div class="day-row-num">Day 3 · Wed 19 Aug</div><div class="day-row-chaps">Matthew 5 &amp; 6</div></div></div>
+              <div class="day-row"><div class="dot dot-future"></div><div class="day-row-info"><div class="day-row-num">Day 4 · Thu 20 Aug</div><div class="day-row-chaps">Matthew 7 &amp; 8</div></div></div>
+              <div class="day-row"><div class="dot dot-future"></div><div class="day-row-info"><div class="day-row-num">Day 5 · Fri 21 Aug</div><div class="day-row-chaps">Matthew 9 &amp; 10</div></div></div>
+              <div class="day-row"><div class="dot dot-future"></div><div class="day-row-info"><div class="day-row-num">Day 6 · Sat 22 Aug</div><div class="day-row-chaps">Matthew 11 &amp; 12</div></div></div>
+              <div class="day-row"><div class="dot dot-future"></div><div class="day-row-info"><div class="day-row-num">Day 7 · Sun 23 Aug</div><div class="day-row-chaps">Matthew 13 &amp; 14</div></div></div>
+              <div class="milestone-chip"><span class="milestone-chip-icon">✨</span><span class="milestone-chip-text">Halfway through Matthew — Day 7</span></div>
+              <div class="day-row"><div class="dot dot-future"></div><div class="day-row-info"><div class="day-row-num">Day 8 · Mon 24 Aug</div><div class="day-row-chaps">Matthew 15 &amp; 16</div></div></div>
+              <div class="day-row"><div class="dot dot-future"></div><div class="day-row-info"><div class="day-row-num">Day 9 · Tue 25 Aug</div><div class="day-row-chaps">Matthew 17 &amp; 18</div></div></div>
+              <div class="day-row"><div class="dot dot-future"></div><div class="day-row-info"><div class="day-row-num">Day 10 · Wed 26 Aug</div><div class="day-row-chaps">Matthew 19 &amp; 20</div></div></div>
+              <div class="day-row"><div class="dot dot-future"></div><div class="day-row-info"><div class="day-row-num">Day 11 · Thu 27 Aug</div><div class="day-row-chaps">Matthew 21 &amp; 22</div></div></div>
+              <div class="day-row"><div class="dot dot-future"></div><div class="day-row-info"><div class="day-row-num">Day 12 · Fri 28 Aug</div><div class="day-row-chaps">Matthew 23 &amp; 24</div></div></div>
+              <div class="day-row"><div class="dot dot-future"></div><div class="day-row-info"><div class="day-row-num">Day 13 · Sat 29 Aug</div><div class="day-row-chaps">Matthew 25 &amp; 26</div></div></div>
+              <div class="day-row"><div class="dot dot-future"></div><div class="day-row-info"><div class="day-row-num">Day 14 · Sun 30 Aug</div><div class="day-row-chaps">Matthew 27 &amp; 28</div></div></div>
+              <div class="milestone-chip"><span class="milestone-chip-icon">🎉</span><span class="milestone-chip-text">You finished Matthew! — after Day 14</span></div>
+            </div>
+            <div class="book-group">
+              <div class="book-group-header">
+                <div class="book-group-name">Mark <span class="book-group-count">16 chs · Days 15–22</span></div>
+                <div class="book-bar"><div class="book-bar-fill" style="width:0%"></div></div>
+              </div>
+              <div class="day-row"><div class="dot dot-future"></div><div class="day-row-info"><div class="day-row-num">Day 15 · Mon 31 Aug</div><div class="day-row-chaps">Mark 1 &amp; 2</div></div></div>
+              <div class="day-row"><div class="dot dot-future"></div><div class="day-row-info"><div class="day-row-num">Day 16 · Tue 1 Sep</div><div class="day-row-chaps">Mark 3 &amp; 4</div></div></div>
+              <div style="padding:4px 16px 8px;font-size:10.5px;color:var(--text-3)">+ 6 more days…</div>
+            </div>
+            <div class="book-group">
+              <div class="book-group-header">
+                <div class="book-group-name">Luke <span class="book-group-count">24 chs · Days 23–34</span></div>
+                <div class="book-bar"><div class="book-bar-fill" style="width:0%"></div></div>
+              </div>
+              <div style="padding:4px 16px 8px;font-size:10.5px;color:var(--text-3)">12 days ahead…</div>
+            </div>
+          </div>
+
+          <div class="sidebar-footer">
+            <div class="user-pill"><div class="user-av">S</div><span class="user-pill-name">Shaun</span></div>
+            <div class="user-pill"><div class="user-av wife">A</div><span class="user-pill-name">Wife</span></div>
+          </div>
+        </aside>
+
+        <!-- MAIN SCROLL -->
+        <div class="main-scroll">
+          <div class="main-inner">
+
+            <!-- Day header -->
+            <div class="day-header">
+              <div class="day-meta">
+                <span class="day-badge">Day 1</span>
+                <span class="day-date">Monday, 17 August 2026</span>
+              </div>
+              <h1 class="day-title">Matthew 1 &amp; 2</h1>
+            </div>
+
+            <!-- Voice player (idle) -->
+            <div class="voice-bar voice-bar-idle" id="voiceBarIdle">
+              <button class="listen-btn" onclick="startReading()">
+                <svg width="14" height="14" viewBox="0 0 15 15" fill="none"><path d="M3 2.5v10l9-5-9-5z" fill="currentColor"/><path d="M11 5c.8.5 1.3 1.4 1.3 2.5S11.8 9.5 11 10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none"/><path d="M12.5 3.5C14 4.5 15 5.9 15 7.5s-1 3-2.5 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none"/></svg>
+                Listen to today's reading
+              </button>
+              <span class="listen-hint">Reads chapters, commentary &amp; prayer</span>
+            </div>
+
+            <!-- Voice player (active) -->
+            <div class="voice-bar voice-bar-active hidden" id="voiceBarActive">
+              <div class="voice-section-label">
+                <div class="voice-pulse" id="voicePulse"></div>
+                <div>
+                  <div class="voice-now-reading">Now reading</div>
+                  <div class="voice-section-name" id="voiceSectionName">Matthew · Chapter 1</div>
+                </div>
+              </div>
+              <div class="voice-progress-track">
+                <div class="voice-progress-fill" id="voiceProgressFill" style="width:0%"></div>
+              </div>
+              <div class="voice-controls-right">
+                <select class="voice-speed-select" id="voiceSpeedSelect" onchange="changeSpeed(this.value)">
+                  <option value="0.8">0.8×</option>
+                  <option value="1.0" selected>1.0×</option>
+                  <option value="1.2">1.2×</option>
+                  <option value="1.5">1.5×</option>
+                </select>
+                <button class="voice-ctrl-btn" id="voicePauseBtn" onclick="togglePause()" title="Pause">⏸</button>
+                <button class="voice-ctrl-btn stop-btn" onclick="stopReading()" title="Stop">⏹</button>
+              </div>
+            </div>
+
+            <!-- Chapter 1 -->
+            <div class="chapter-sep">
+              <div class="chapter-sep-line"></div>
+              <span class="chapter-sep-label">Matthew · Chapter 1</span>
+              <div class="chapter-sep-line"></div>
+            </div>
+            <div class="bible-passage" id="ch1-passage">
+              <sup class="vn">1</sup>The book of the genealogy of Jesus Christ, the son of David, the son of Abraham.
+              <sup class="vn">2</sup>Abraham became the father of Isaac. Isaac became the father of Jacob. Jacob became the father of Judah and his brothers.
+              <sup class="vn">3</sup>Judah became the father of Perez and Zerah by Tamar. Perez became the father of Hezron. Hezron became the father of Ram.
+              <sup class="vn">4</sup>Ram became the father of Amminadab. Amminadab became the father of Nahshon. Nahshon became the father of Salmon.
+              <sup class="vn">5</sup>Salmon became the father of Boaz by Rahab. Boaz became the father of Obed by Ruth. Obed became the father of Jesse.
+              <sup class="vn">6</sup>Jesse became the father of King David. David became the father of Solomon by her who had been Uriah's wife.
+              <span class="verse-ellipsis" data-voice-skip>verses 7–17 · genealogy continues…</span>
+              <sup class="vn">16</sup>Jacob became the father of Joseph, the husband of Mary, from whom was born Jesus, who is called Christ.
+              <sup class="vn">17</sup>So all the generations from Abraham to David are fourteen generations; from David to the exile to Babylon fourteen generations; and from the carrying away to Babylon to the Christ, fourteen generations.
+              <sup class="vn">18</sup>Now the birth of Jesus Christ was like this: After his mother, Mary, was engaged to Joseph, before they came together, she was found pregnant by the Holy Spirit.
+              <sup class="vn">19</sup>Joseph, her husband, being a righteous man, and not willing to make her a public example, intended to put her away secretly.
+              <sup class="vn">20</sup>But when he thought about these things, behold, an angel of the Lord appeared to him in a dream, saying, "Joseph, son of David, don't be afraid to take to yourself Mary, your wife, for that which is conceived in her is of the Holy Spirit.
+              <sup class="vn">21</sup>She shall give birth to a son. You shall call his name Jesus, for it is he who shall save his people from their sins."
+              <sup class="vn">22</sup>Now all this happened that it might be fulfilled which was spoken by the Lord through the prophet, saying,
+              <sup class="vn">23</sup>"Behold, the virgin shall be with child, and shall give birth to a son. They shall call his name Immanuel"; which is, being interpreted, "God with us."
+              <sup class="vn">24</sup>Joseph arose from his sleep, and did as the angel of the Lord commanded him, and took his wife to himself;
+              <sup class="vn">25</sup>and didn't know her sexually until she had given birth to her firstborn son. He named him Jesus.
+            </div>
+            <p class="translation-note">World English Bible (WEB)</p>
+
+            <!-- Chapter 2 -->
+            <div class="chapter-sep">
+              <div class="chapter-sep-line"></div>
+              <span class="chapter-sep-label">Matthew · Chapter 2</span>
+              <div class="chapter-sep-line"></div>
+            </div>
+            <div class="bible-passage" id="ch2-passage">
+              <sup class="vn">1</sup>Now when Jesus was born in Bethlehem of Judea in the days of King Herod, behold, wise men from the east came to Jerusalem, saying,
+              <sup class="vn">2</sup>"Where is he who is born King of the Jews? For we saw his star in the east, and have come to worship him."
+              <sup class="vn">3</sup>When King Herod heard it, he was troubled, and all Jerusalem with him.
+              <sup class="vn">4</sup>Gathering together all the chief priests and scribes of the people, he asked them where the Christ would be born.
+              <sup class="vn">5</sup>They said to him, "In Bethlehem of Judea, for this is written through the prophet:
+              <sup class="vn">6</sup>'You Bethlehem, land of Judah, are in no way least among the princes of Judah: for out of you shall come a governor who shall shepherd my people, Israel.'"
+              <sup class="vn">7</sup>Then Herod secretly called the wise men, and learned from them exactly what time the star appeared.
+              <sup class="vn">8</sup>He sent them to Bethlehem, and said, "Go and search diligently for the young child. When you have found him, bring me word, so that I also may come and worship him."
+              <sup class="vn">9</sup>They, having heard the king, went their way; and behold, the star, which they saw in the east, went before them until it came and stood over where the young child was.
+              <sup class="vn">10</sup>When they saw the star, they rejoiced with exceedingly great joy.
+              <sup class="vn">11</sup>They came into the house and saw the young child with Mary, his mother, and they fell down and worshiped him. Opening their treasures, they offered to him gifts: gold, frankincense, and myrrh.
+              <sup class="vn">12</sup>Being warned in a dream that they shouldn't return to Herod, they went back to their own country another way.
+              <sup class="vn">13</sup>Now when they had departed, behold, an angel of the Lord appeared to Joseph in a dream, saying, "Arise and take the young child and his mother, and flee into Egypt, and stay there until I tell you, for Herod will seek the young child to destroy him."
+              <sup class="vn">14</sup>He arose and took the young child and his mother by night, and departed into Egypt,
+              <sup class="vn">15</sup>and was there until the death of Herod; that it might be fulfilled which was spoken by the Lord through the prophet, saying, "Out of Egypt I called my son."
+              <span class="verse-ellipsis" data-voice-skip>verses 16–18 · the massacre of the innocents…</span>
+              <sup class="vn">19</sup>But when Herod was dead, behold, an angel of the Lord appeared in a dream to Joseph in Egypt, saying,
+              <sup class="vn">20</sup>"Arise and take the young child and his mother, and go into the land of Israel, for those who sought the young child's life are dead."
+              <sup class="vn">21</sup>He arose and took the young child and his mother, and came into the land of Israel.
+              <sup class="vn">22</sup>But when he heard that Archelaus was reigning over Judea in the place of his father, Herod, he was afraid to go there. Being warned in a dream, he withdrew into the region of Galilee,
+              <sup class="vn">23</sup>and came and lived in a city called Nazareth; that it might be fulfilled which was spoken through the prophets, that he will be called a Nazarene.
+            </div>
+            <p class="translation-note">World English Bible (WEB)</p>
+
+            <!-- Reflection -->
+            <div class="section-sep">
+              <div class="section-sep-line"></div>
+              <span class="section-sep-label">Reflection</span>
+              <div class="section-sep-line"></div>
+            </div>
+            <div class="commentary-stack">
+              <div class="c-card">
+                <div class="c-eyebrow">What's happening</div>
+                <div class="c-body" id="whats-happening-body">Chapter 1 opens Matthew's Gospel with a genealogy tracing Jesus' lineage from Abraham through David to Joseph, establishing his rightful place in Israel's story. Matthew then recounts the announcement of Jesus' conception by the Holy Spirit to a troubled Joseph, who chooses faithfulness over reputation. Chapter 2 shifts to the arrival of Magi from the east, whose worship of the newborn king triggers Herod's jealous rage. Through divine warnings and dreams, the holy family flees to Egypt, fulfilling ancient prophecy, before returning safely to settle in Nazareth after Herod's death.</div>
+              </div>
+              <div class="kv-card">
+                <div class="c-eyebrow">Key verse</div>
+                <div class="kv-text" id="kv-text">"She shall give birth to a son. You shall call his name Jesus, for it is he who shall save his people from their sins."</div>
+                <div class="kv-ref" id="kv-ref">Matthew 1:21 · WEB</div>
+              </div>
+              <div class="c-card">
+                <div class="c-eyebrow">Commentary</div>
+                <div class="c-body" id="commentary-body">Matthew begins not with drama but with a list of names — a bold choice that grounds Jesus firmly in the sweep of Israel's history. As William Barclay observed, this genealogy was Matthew's way of saying to his Jewish audience: this is the One your whole story has been moving toward. The name "Jesus" — Yeshua — means "God saves," and Matthew wants us to feel the weight of that claim before we read another word. N.T. Wright notes that Joseph's quiet act of obedience is itself a kind of foreshadowing: the whole Gospel will ask ordinary people to receive extraordinary news and act on it. The Magi in chapter 2 are a striking counterpoint — foreign Gentiles who worship the Jewish Messiah while Jerusalem's own king plots his murder. Craig Keener points out that Matthew is already signalling what Jesus will be: saviour not only of Israel but of the nations, welcomed by unexpected outsiders, rejected by those who should have known him best.</div>
+              </div>
+              <div class="prayer-card">
+                <div class="c-eyebrow">A prayer for today</div>
+                <div class="c-body" id="prayer-body">Lord Jesus, as I begin this journey through your Word, open my eyes to see you in every chapter — not as a distant figure from history, but as the living Saviour Matthew introduces. Thank you that your story reaches all the way back through generations of broken, ordinary people, and that you chose to enter our world through that very brokenness. Like Joseph, give me the courage to trust your word even when it asks something difficult of me. And like the Magi, let me seek you with everything I have, and bow in wonder when I find you. Amen.</div>
+              </div>
+            </div>
+
+            <!-- Thoughts of the Day -->
+            <div class="thoughts-sep">
+              <div class="thoughts-sep-line"></div>
+              <span class="thoughts-sep-label">Thoughts of the Day</span>
+              <div class="thoughts-sep-line"></div>
+            </div>
+            <div class="thoughts-grid">
+              <div class="thought-card">
+                <div class="thought-header">
+                  <div class="thought-av">S</div>
+                  <div><div class="thought-av-name">Shaun</div><div class="thought-av-role">Husband</div></div>
+                </div>
+                <textarea class="thought-textarea" placeholder="What stood out to you today? What is God saying to you through this passage?"></textarea>
+                <div class="thought-footer">
+                  <span class="thought-time">Not yet saved</span>
+                  <button class="save-btn">Save reflection</button>
+                </div>
+              </div>
+              <div class="thought-card">
+                <div class="thought-header">
+                  <div class="thought-av wife">A</div>
+                  <div><div class="thought-av-name">Wife</div><div class="thought-av-role">Reading together</div></div>
+                </div>
+                <div class="thought-read">The genealogy really struck me — so many unexpected names, Rahab, Ruth, Tamar. God doesn't write the story we'd expect. And Joseph's quiet trust even when he didn't understand moved me. I want that kind of faith — to just do the next right thing even when it costs me something.</div>
+                <div class="thought-read-meta">Saved at 7:42 am · 17 Aug 2026</div>
+              </div>
+            </div>
+
+          </div>
+        </div><!-- end main-scroll -->
+      </div><!-- end app-body -->
+
+      <!-- Home indicator (mobile) -->
+      <div class="home-indicator"><div class="home-bar"></div></div>
+
+    </div><!-- end app-root -->
+  </div><!-- end stage -->
+
+  <!-- ── SETTINGS MODAL ─────────────────────────── -->
+  <div class="modal-overlay" id="settingsOverlay" onclick="handleOverlayClick(event)">
+    <div class="settings-modal">
+      <div class="settings-header">
+        <span class="settings-title">Settings</span>
+        <button class="modal-close" onclick="closeSettings()">✕</button>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-label">Profile</div>
+        <div class="settings-field">
+          <div class="field-label">Your name</div>
+          <input type="text" class="field-input" value="Shaun" placeholder="Your name">
+        </div>
+        <div class="settings-field">
+          <div class="field-label">Reading as</div>
+          <div class="role-buttons">
+            <button class="role-btn selected">Husband</button>
+            <button class="role-btn">Wife</button>
+          </div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-label">Appearance</div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Dark mode</div>
+            <div class="settings-row-desc">Easier on the eyes at night</div>
+          </div>
+          <input type="checkbox" class="toggle-input" id="darkModeToggle" onchange="toggleDarkMode(this)">
+          <label class="toggle-label" for="darkModeToggle"></label>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-label">Voice &amp; Audio</div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Read aloud</div>
+            <div class="settings-row-desc">Tap "Listen" to hear chapters, commentary &amp; prayer</div>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Default speed</div>
+            <div class="settings-row-desc">How fast the voice reads</div>
+          </div>
+          <select class="voice-speed-select" style="font-size:13px;padding:7px 12px" onchange="document.getElementById('voiceSpeedSelect').value=this.value">
+            <option value="0.8">0.8×</option>
+            <option value="1.0" selected>1.0×</option>
+            <option value="1.2">1.2×</option>
+            <option value="1.5">1.5×</option>
+          </select>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-label">Notifications</div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Morning reminder</div><div class="settings-row-desc">8:00 am daily</div></div>
+          <input type="checkbox" class="toggle-input" id="morningToggle" checked>
+          <label class="toggle-label" for="morningToggle"></label>
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Evening nudge</div><div class="settings-row-desc">9:00 pm if unread</div></div>
+          <input type="checkbox" class="toggle-input" id="eveningToggle" checked>
+          <label class="toggle-label" for="eveningToggle"></label>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-label">About</div>
+        <div class="about-block">
+          <strong>Daily Devotional App</strong><br>
+          Reading the Bible Cover to Cover<br><br>
+          Bible text: <strong>World English Bible (WEB)</strong><br>
+          Public domain · no copyright restrictions<br><br>
+          Version 1.0 · Preview build
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ── PREVIEW SWITCHER ────────────────────────── */
+    function setPreviewMode(mode) {
+      document.body.classList.toggle('mobile-preview', mode === 'mobile');
+      document.getElementById('btnDesktop').classList.toggle('active', mode === 'desktop');
+      document.getElementById('btnMobile').classList.toggle('active', mode === 'mobile');
+      // Close sidebar if switching modes
+      closeMobileMenu();
+      stopReading();
+    }
+
+    /* ── DARK MODE ───────────────────────────────── */
+    function toggleDarkMode(cb) {
+      document.documentElement.dataset.theme = cb.checked ? 'dark' : 'light';
+      localStorage.setItem('theme', cb.checked ? 'dark' : 'light');
+    }
+    (function() {
+      const s = localStorage.getItem('theme');
+      if (s) {
+        document.documentElement.dataset.theme = s;
+        const cb = document.getElementById('darkModeToggle');
+        if (cb && s === 'dark') cb.checked = true;
+      }
+    })();
+
+    /* ── SETTINGS ────────────────────────────────── */
+    function openSettings() { document.getElementById('settingsOverlay').classList.add('open'); }
+    function closeSettings() { document.getElementById('settingsOverlay').classList.remove('open'); }
+    function handleOverlayClick(e) { if (e.target === document.getElementById('settingsOverlay')) closeSettings(); }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeSettings(); closeMobileMenu(); } });
+
+    /* ── MOBILE DRAWER ───────────────────────────── */
+    function openMobileMenu() {
+      document.getElementById('sidebar').classList.add('drawer-open');
+      document.getElementById('mobileOverlay').classList.add('open');
+    }
+    function closeMobileMenu() {
+      document.getElementById('sidebar').classList.remove('drawer-open');
+      document.getElementById('mobileOverlay').classList.remove('open');
+    }
+
+    /* ── VOICE / TTS ─────────────────────────────── */
+    let voiceSections = [], voiceIndex = 0, voicePaused = false;
+
+    function buildPassageText(id) {
+      const el = document.getElementById(id);
+      if (!el) return '';
+      const clone = el.cloneNode(true);
+      clone.querySelectorAll('[data-voice-skip]').forEach(n => n.remove());
+      clone.querySelectorAll('.vn').forEach(n => { n.textContent = n.textContent.trim() + '. '; });
+      return clone.textContent.replace(/\s+/g, ' ').trim();
+    }
+
+    function buildSections() {
+      return [
+        { label: 'Day 1 · Matthew 1 & 2', text: 'Day 1. Monday, 17th August 2026. Today we are reading Matthew, chapters 1 and 2.' },
+        { label: 'Matthew · Chapter 1', text: 'Matthew. Chapter 1. ' + buildPassageText('ch1-passage') },
+        { label: 'Matthew · Chapter 2', text: 'Matthew. Chapter 2. ' + buildPassageText('ch2-passage') },
+        { label: "What's happening", text: "What is happening. " + (document.getElementById('whats-happening-body')?.textContent.trim() || '') },
+        { label: 'Key verse — Matthew 1:21', text: 'Key verse. Matthew 1, verse 21. ' + (document.getElementById('kv-text')?.textContent.replace(/[""]/g,'').trim() || '') },
+        { label: 'Commentary', text: 'Commentary. ' + (document.getElementById('commentary-body')?.textContent.trim() || '') },
+        { label: 'A prayer for today', text: 'A prayer for today. ' + (document.getElementById('prayer-body')?.textContent.trim() || '') }
+      ];
+    }
+
+    function updateVoiceUI(idx, paused) {
+      document.getElementById('voiceSectionName').textContent = voiceSections[idx]?.label || '';
+      document.getElementById('voiceProgressFill').style.width = (((idx + 1) / voiceSections.length) * 100) + '%';
+      document.getElementById('voicePulse').classList.toggle('paused', paused);
+      const btn = document.getElementById('voicePauseBtn');
+      btn.textContent = paused ? '▶' : '⏸';
+      btn.title = paused ? 'Resume' : 'Pause';
+    }
+
+    function speakSection(idx) {
+      if (idx >= voiceSections.length) { stopReading(); return; }
+      voiceIndex = idx;
+      const rate = parseFloat(document.getElementById('voiceSpeedSelect').value) || 1.0;
+      const utt = new SpeechSynthesisUtterance(voiceSections[idx].text);
+      utt.rate = rate; utt.lang = 'en-US';
+      utt.onend = () => { if (!voicePaused) speakSection(idx + 1); };
+      utt.onerror = e => { if (e.error !== 'interrupted') stopReading(); };
+      updateVoiceUI(idx, false);
+      window.speechSynthesis.speak(utt);
+    }
+
+    function startReading() {
+      if (!('speechSynthesis' in window)) { alert('Text-to-speech not supported. Try Chrome or Safari.'); return; }
+      window.speechSynthesis.cancel();
+      voiceSections = buildSections();
+      voicePaused = false;
+      document.getElementById('voiceBarIdle').classList.add('hidden');
+      document.getElementById('voiceBarActive').classList.remove('hidden');
+      speakSection(0);
+    }
+
+    function togglePause() {
+      if (voicePaused) { voicePaused = false; window.speechSynthesis.resume(); updateVoiceUI(voiceIndex, false); }
+      else { voicePaused = true; window.speechSynthesis.pause(); updateVoiceUI(voiceIndex, true); }
+    }
+
+    function stopReading() {
+      voicePaused = false;
+      window.speechSynthesis.cancel();
+      document.getElementById('voiceBarActive').classList.add('hidden');
+      document.getElementById('voiceBarIdle').classList.remove('hidden');
+      document.getElementById('voiceProgressFill').style.width = '0%';
+    }
+
+    function changeSpeed(val) {
+      if (!document.getElementById('voiceBarActive').classList.contains('hidden') && !voicePaused) {
+        window.speechSynthesis.cancel();
+        speakSection(voiceIndex);
+      }
+    }
+
+    window.addEventListener('beforeunload', () => window.speechSynthesis.cancel());
+  </script>
+</body>
+</html>

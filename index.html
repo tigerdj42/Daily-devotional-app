@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Daily Devotional</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#C4A46B">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Devotional">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- App styles -->
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- Firebase v10 compat (credentials set at runtime via Settings) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+</head>
+<body>
+
+<div id="app-root">
+
+  <!-- ══════════════════════════════════════════════════════
+       AUTH SCREEN
+  ══════════════════════════════════════════════════════════ -->
+  <div id="screen-auth" class="screen active" role="main" aria-label="Sign in">
+    <div class="auth-screen">
+      <div class="auth-logo" aria-hidden="true">✦</div>
+      <h1 class="auth-title">Daily Devotional</h1>
+      <p class="auth-subtitle">Read the New Testament together.<br>2 chapters a day. 130 days.</p>
+      <button id="btn-google-signin" class="google-signin-btn">
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+          <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+          <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
+          <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/>
+        </svg>
+        Sign in with Google
+      </button>
+      <p class="auth-note">Your reflections sync across all your devices.<br>We never store your Bible reading data anywhere else.</p>
+
+      <!-- Firebase not configured yet: show settings prompt -->
+      <div id="auth-no-config" class="hidden" style="margin-top:28px; text-align:center;">
+        <p style="font-size:13px; color:var(--text-3); margin-bottom:12px;">Firebase is not set up yet.</p>
+        <button id="btn-open-settings-auth" class="google-signin-btn" style="font-size:13px; padding:10px 20px; min-height:44px;">
+          ⚙ Enter Firebase config
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════
+       PROFILE SETUP SCREEN
+  ══════════════════════════════════════════════════════════ -->
+  <div id="screen-setup" class="screen" role="main" aria-label="Profile setup">
+    <div class="setup-screen">
+      <div class="setup-card">
+        <h2 class="setup-heading">Welcome!</h2>
+        <p class="setup-sub">Quick setup — we just need your name so your partner can see who wrote each reflection.</p>
+
+        <div class="setup-field">
+          <label class="setup-label" for="setup-name-input">Your first name</label>
+          <input id="setup-name-input" class="setup-input" type="text" placeholder="e.g. Shaun" autocomplete="given-name" maxlength="40">
+        </div>
+
+        <div class="setup-field">
+          <label class="setup-label">I am the…</label>
+          <div class="role-buttons">
+            <button class="role-btn" data-role="husband">Husband</button>
+            <button class="role-btn" data-role="wife">Wife</button>
+          </div>
+        </div>
+
+        <button id="btn-setup-save" class="setup-submit-btn" disabled>Start reading →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════
+       MAIN APP SCREEN
+  ══════════════════════════════════════════════════════════ -->
+  <div id="screen-main" class="screen" role="main" aria-label="Daily reading">
+
+    <!-- Header -->
+    <header class="app-header" role="banner">
+      <!-- Mobile hamburger -->
+      <button id="hamburger-btn" class="hamburger-btn" aria-label="Open day list" aria-expanded="false" aria-controls="sidebar">
+        <span class="ham-line"></span>
+        <span class="ham-line"></span>
+        <span class="ham-line"></span>
+      </button>
+
+      <!-- Mobile centre title -->
+      <div class="mobile-header-center" aria-hidden="true">
+        <span id="mobile-header-title" class="mobile-header-title">Daily Devotional</span>
+        <span id="mobile-header-sub" class="mobile-header-sub"></span>
+      </div>
+
+      <!-- Desktop: logo block (inside header, sits over sidebar) -->
+      <div class="header-logo-block" aria-hidden="true">
+        <div class="logo-mark">✦</div>
+        <div class="logo-text">
+          <span class="app-title">Daily Devotional</span>
+          <span class="app-subtitle">NT Reading Plan</span>
+        </div>
+      </div>
+
+      <!-- Desktop: day info -->
+      <div id="header-day-info" class="header-day-info" aria-hidden="true">
+        <span id="header-day-badge" class="header-day-badge"></span>
+        <span id="header-day-text" class="header-day-text"></span>
+      </div>
+
+      <!-- Right controls -->
+      <div class="header-right">
+        <button id="btn-dark-toggle" class="icon-btn" aria-label="Toggle dark mode" title="Toggle dark mode">
+          <span id="dark-icon">☾</span>
+        </button>
+        <button id="btn-settings" class="icon-btn" aria-label="Settings" title="Settings">⚙</button>
+      </div>
+    </header>
+
+    <!-- Body -->
+    <div class="app-body">
+
+      <!-- Mobile overlay (drawer backdrop) -->
+      <div id="mobile-overlay" class="mobile-overlay" aria-hidden="true"></div>
+
+      <!-- Sidebar -->
+      <nav id="sidebar" class="sidebar" aria-label="Day list">
+        <!-- Mobile close row -->
+        <div class="sidebar-close-row">
+          <span class="sidebar-close-label">Reading plan</span>
+          <button id="btn-close-sidebar" class="sidebar-close-btn" aria-label="Close day list">✕</button>
+        </div>
+
+        <!-- NT progress -->
+        <div class="nt-progress">
+          <div class="progress-row">
+            <span class="progress-label">NT Progress</span>
+            <span id="progress-frac" class="progress-frac">0 / 130 days</span>
+          </div>
+          <div class="bar"><div id="progress-bar-fill" class="bar-fill" style="width:0%"></div></div>
+          <p id="progress-sub" class="progress-sub"></p>
+        </div>
+
+        <!-- Day list (populated by app.js) -->
+        <div id="sidebar-list" class="sidebar-list" role="list" aria-label="Days"></div>
+
+        <!-- Sidebar footer (user info) -->
+        <div class="sidebar-footer">
+          <div class="user-pill">
+            <div id="sidebar-user-av" class="user-av" aria-hidden="true"></div>
+            <span id="sidebar-user-name" class="user-pill-name"></span>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Main content -->
+      <main id="main-scroll" class="main-scroll" aria-label="Today's reading">
+        <div class="main-inner">
+
+          <!-- Notification permission banner (shown once) -->
+          <div id="notif-banner" class="notif-banner hidden">
+            <span class="notif-banner-text">Get a morning reminder when today's reading is ready.</span>
+            <button id="btn-notif-enable" class="notif-banner-btn">Enable</button>
+            <button id="btn-notif-dismiss" class="notif-banner-dismiss" aria-label="Dismiss">✕</button>
+          </div>
+
+          <!-- iOS install instructions banner -->
+          <div id="ios-install-banner" class="notif-banner hidden" style="flex-direction:column; align-items:flex-start; gap:8px;">
+            <p class="notif-banner-text" style="font-weight:600;">Add to Home Screen to enable notifications</p>
+            <p class="notif-banner-text">Tap the share icon → "Add to Home Screen" → Open the app from your home screen.</p>
+            <button id="btn-ios-dismiss" class="notif-banner-dismiss" aria-label="Dismiss" style="align-self:flex-end;">✕</button>
+          </div>
+
+          <!-- Voice bar -->
+          <div id="voice-bar" class="voice-bar voice-bar-idle" aria-label="Text to speech player">
+            <button id="btn-listen" class="listen-btn" aria-label="Listen to today's reading">
+              <span>▶</span> Listen to today's reading
+            </button>
+            <span class="listen-hint">Reads passage + commentary aloud</span>
+          </div>
+
+          <!-- Day header -->
+          <div id="day-header" class="day-header">
+            <div class="day-meta">
+              <span id="main-day-badge" class="day-badge"></span>
+              <span id="main-day-date" class="day-date"></span>
+            </div>
+            <h2 id="main-day-title" class="day-title"></h2>
+          </div>
+
+          <!-- Missed day banner -->
+          <div id="missed-banner" class="missed-banner hidden">
+            <span class="missed-banner-icon">⚠</span>
+            <span class="missed-banner-text">You're viewing a past day. Reflect on it any time — it's never too late.</span>
+          </div>
+
+          <!-- Bible passage area (chapters injected here) -->
+          <div id="bible-content"></div>
+
+          <!-- Commentary section separator -->
+          <div class="section-sep">
+            <div class="section-sep-line"></div>
+            <span class="section-sep-label">Today's Commentary</span>
+            <div class="section-sep-line"></div>
+          </div>
+
+          <!-- What's happening card -->
+          <div class="commentary-stack">
+            <div class="c-card">
+              <div class="c-eyebrow">What's happening</div>
+              <p id="commentary-what" class="c-body"></p>
+            </div>
+
+            <!-- Key verse card -->
+            <div class="kv-card">
+              <p id="kv-text" class="kv-text"></p>
+              <span id="kv-ref" class="kv-ref"></span>
+            </div>
+
+            <!-- Commentary card -->
+            <div class="c-card">
+              <div class="c-eyebrow">Commentary</div>
+              <p id="commentary-body" class="c-body"></p>
+            </div>
+
+            <!-- Prayer card -->
+            <div class="prayer-card">
+              <div class="c-eyebrow" style="color:var(--text-3); margin-bottom:8px;">Prayer</div>
+              <p id="prayer-body" class="c-body" style="font-style:italic;"></p>
+            </div>
+          </div>
+
+          <!-- Thoughts / reflections section -->
+          <div class="thoughts-sep">
+            <div class="thoughts-sep-line"></div>
+            <span class="thoughts-sep-label">Our Thoughts</span>
+            <div class="thoughts-sep-line"></div>
+          </div>
+
+          <div id="thoughts-grid" class="thoughts-grid"></div>
+
+        </div><!-- /main-inner -->
+      </main><!-- /main-scroll -->
+
+    </div><!-- /app-body -->
+  </div><!-- /screen-main -->
+
+</div><!-- /app-root -->
+
+<!-- ══════════════════════════════════════════════════════════
+     MODALS (outside app-root so z-index stacks correctly)
+════════════════════════════════════════════════════════════ -->
+
+<!-- Milestone celebration modal -->
+<div id="modal-milestone" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="milestone-modal-title" aria-hidden="true">
+  <div class="milestone-modal">
+    <div id="milestone-icon" class="milestone-modal-icon"></div>
+    <h2 id="milestone-modal-title" class="milestone-modal-title"></h2>
+    <p id="milestone-modal-body" class="milestone-modal-body"></p>
+    <button id="btn-milestone-close" class="milestone-modal-btn">Continue reading</button>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div id="modal-settings" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" aria-hidden="true">
+  <div class="settings-modal">
+    <div class="settings-header">
+      <h2 id="settings-modal-title" class="settings-title">Settings</h2>
+      <button id="btn-settings-close" class="modal-close" aria-label="Close settings">✕</button>
+    </div>
+
+    <!-- Firebase config section -->
+    <div class="settings-section">
+      <div class="settings-section-label">Firebase Config</div>
+      <p style="font-size:12px; color:var(--text-3); margin-bottom:12px; line-height:1.5;">
+        Enter your Firebase project credentials. Find these in Firebase Console → Project Settings → Your apps.
+      </p>
+      <div class="settings-field">
+        <label class="field-label" for="cfg-api-key">API Key</label>
+        <input id="cfg-api-key" class="field-input" type="text" placeholder="AIza..." autocomplete="off">
+      </div>
+      <div class="settings-field">
+        <label class="field-label" for="cfg-auth-domain">Auth Domain</label>
+        <input id="cfg-auth-domain" class="field-input" type="text" placeholder="your-app.firebaseapp.com">
+      </div>
+      <div class="settings-field">
+        <label class="field-label" for="cfg-project-id">Project ID</label>
+        <input id="cfg-project-id" class="field-input" type="text" placeholder="your-app">
+      </div>
+      <div class="settings-field">
+        <label class="field-label" for="cfg-storage-bucket">Storage Bucket</label>
+        <input id="cfg-storage-bucket" class="field-input" type="text" placeholder="your-app.appspot.com">
+      </div>
+      <div class="settings-field">
+        <label class="field-label" for="cfg-messaging-sender-id">Messaging Sender ID</label>
+        <input id="cfg-messaging-sender-id" class="field-input" type="text" placeholder="123456789">
+      </div>
+      <div class="settings-field">
+        <label class="field-label" for="cfg-app-id">App ID</label>
+        <input id="cfg-app-id" class="field-input" type="text" placeholder="1:123:web:abc">
+      </div>
+      <div class="settings-field">
+        <label class="field-label" for="cfg-vapid-key">VAPID Public Key (for push notifications)</label>
+        <input id="cfg-vapid-key" class="field-input" type="text" placeholder="BNj..." autocomplete="off">
+      </div>
+      <button id="btn-save-firebase-config" class="save-btn" style="width:100%; border-radius:10px; margin-top:4px;">
+        Save &amp; connect
+      </button>
+      <p id="firebase-config-status" style="font-size:11px; color:var(--text-3); margin-top:8px; text-align:center;"></p>
+    </div>
+
+    <!-- Preferences section -->
+    <div class="settings-section">
+      <div class="settings-section-label">Preferences</div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Dark mode</div>
+        </div>
+        <input id="toggle-dark" class="toggle-input" type="checkbox" id="toggle-dark">
+        <label class="toggle-label" for="toggle-dark" aria-label="Dark mode toggle"></label>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Push notifications</div>
+          <div class="settings-row-desc">Morning reminder + evening nudge if no reflection saved</div>
+        </div>
+        <input id="toggle-notif" class="toggle-input" type="checkbox">
+        <label class="toggle-label" for="toggle-notif" aria-label="Notifications toggle"></label>
+      </div>
+    </div>
+
+    <!-- Account section -->
+    <div class="settings-section" id="settings-account-section">
+      <div class="settings-section-label">Account</div>
+      <div class="settings-row">
+        <div>
+          <div id="settings-account-name" class="settings-row-label"></div>
+          <div id="settings-account-email" class="settings-row-desc"></div>
+        </div>
+      </div>
+      <button id="btn-signout" class="signout-btn" style="margin-top:8px;">Sign out</button>
+    </div>
+
+    <!-- About -->
+    <div class="settings-section">
+      <div class="settings-section-label">About</div>
+      <div class="about-block">
+        <strong>Daily Devotional</strong><br>
+        New Testament reading plan — Matthew to Revelation.<br>
+        17 Aug – 24 Dec 2026 · 2 chapters/day · 130 days.<br><br>
+        Bible text: <strong>World English Bible (WEB)</strong><br>
+        Commentary: Matthew Henry, Barclay, N.T. Wright, ESV Study Bible.
+      </div>
+    </div>
+
+  </div><!-- /settings-modal -->
+</div><!-- /modal-settings -->
+
+<!-- Pre-generated commentary data -->
+<script src="commentary.js"></script>
+<!-- Firebase helpers -->
+<script src="firebase-config.js"></script>
+<!-- Main app logic -->
+<script src="app.js"></script>
+
+</body>
+</html>
