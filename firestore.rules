@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /* Profiles. Any signed-in user may READ a profile — the app shows the
+       partner's name and role on their reflection card. Only the owner
+       may write their own profile. */
+    match /users/{uid} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    /* Pair linking: joins the husband and wife UIDs. */
+    match /pair/{pairId} {
+      allow read:   if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null
+        && (resource.data.husbandUid == request.auth.uid
+            || resource.data.wifeUid == request.auth.uid
+            || resource.data.husbandUid == null
+            || resource.data.wifeUid == null);
+    }
+
+    /* Reflections. Firestore document paths need an EVEN number of
+       segments, so each user's days live in a `days` subcollection:
+       /reflections/{uid}/days/{day}
+       Both partners may read; only the owner may write. */
+    match /reflections/{uid}/days/{day} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    /* Milestones: /milestones/{uid}/items/{id} — private to the owner. */
+    match /milestones/{uid}/items/{id} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    /* Push subscription endpoints — private to the owner. */
+    match /subscriptions/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

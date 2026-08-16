@@ -236,16 +236,33 @@ function applyDarkMode(on) {
 /* ── SERVICE WORKER ──────────────────────────────────────── */
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(console.warn);
+    /* Relative path + scope: the app is served from a project subpath on
+       GitHub Pages (/Daily-devotional-app/), so '/sw.js' would 404. */
+    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(console.warn);
   }
 }
 
 /* ── AUTH EVENTS ─────────────────────────────────────────── */
+const GOOGLE_BTN_HTML = `
+  <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+    <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+    <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+    <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
+    <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/>
+  </svg>
+  Sign in with Google`;
+
+function resetGoogleButton() {
+  dom.btnGoogleSignin.disabled = false;
+  dom.btnGoogleSignin.innerHTML = GOOGLE_BTN_HTML;
+}
+
 function wireAuthEvents() {
   dom.btnGoogleSignin.addEventListener('click', async () => {
     const isStandalone = window.navigator.standalone === true ||
       window.matchMedia('(display-mode: standalone)').matches;
 
+    clearAuthError();
     dom.btnGoogleSignin.disabled = true;
     dom.btnGoogleSignin.textContent = isStandalone ? 'Redirecting…' : 'Signing in…';
     try {
@@ -259,15 +276,7 @@ function wireAuthEvents() {
       }
     } catch (e) {
       console.error(e);
-      dom.btnGoogleSignin.disabled = false;
-      dom.btnGoogleSignin.innerHTML = `
-        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-          <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
-          <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
-          <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
-          <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/>
-        </svg>
-        Sign in with Google`;
+      resetGoogleButton();
     }
   });
 
@@ -289,17 +298,45 @@ async function loadUserData() {
     state.currentDay = todayDayNumber();
     showMainApp();
   } catch (e) {
+    /* Never leave the user on a frozen "Signing in…" screen: surface the
+       reason and let them retry. */
     console.error('[app] loadUserData error:', e);
+    showAuthError(e);
   }
+}
+
+/* Show the auth screen again with a readable error and a usable button. */
+function showAuthError(err) {
+  const msg = (err && (err.message || err.code)) || 'Unknown error';
+  showScreen('auth');
+  resetGoogleButton();
+  let el = document.getElementById('auth-error');
+  if (!el) {
+    el = document.createElement('p');
+    el.id = 'auth-error';
+    el.style.cssText = 'margin-top:16px; font-size:13px; color:var(--missed,#C0674A); max-width:320px; text-align:center; line-height:1.5;';
+    dom.btnGoogleSignin.parentNode.insertBefore(el, dom.btnGoogleSignin.nextSibling);
+  }
+  el.textContent = `Sign-in succeeded but loading your data failed: ${msg}`;
+}
+
+function clearAuthError() {
+  const el = document.getElementById('auth-error');
+  if (el) el.remove();
 }
 
 async function loadCompletedDays() {
   /* We infer completion from whether the user has a reflection for each day.
-     For simplicity we check all days up to today. */
+     A single failed read must not blank the whole app, so failures count as
+     "not completed" rather than rejecting the batch. */
   const today = todayDayNumber();
   const checks = [];
   for (let d = 1; d <= today; d++) {
-    checks.push(window.FB.getReflection(state.user.uid, d).then(r => r ? d : null));
+    checks.push(
+      window.FB.getReflection(state.user.uid, d)
+        .then(r => (r ? d : null))
+        .catch(e => { console.warn('[app] reflection read failed for day', d, e); return null; })
+    );
   }
   const results = await Promise.all(checks);
   state.completedDays = new Set(results.filter(Boolean));
@@ -590,8 +627,14 @@ async function renderDay(day) {
   /* Scroll to top */
   dom.mainScroll.scrollTo({ top: 0, behavior: 'smooth' });
 
-  /* Reflections */
-  await renderThoughts(day);
+  /* Reflections — a Firestore failure here must not blank the reading. */
+  try {
+    await renderThoughts(day);
+  } catch (e) {
+    console.error('[app] renderThoughts failed:', e);
+    dom.thoughtsGrid.innerHTML =
+      `<p class="thought-empty">Could not load reflections. ${escHtml(e.message || '')}</p>`;
+  }
 
   /* Check milestones */
   if (day === today) checkMilestones(day);

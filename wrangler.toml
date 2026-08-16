@@ -1,0 +1,6 @@
+name = "devotional-push"
+main = "cloudflare-worker.js"
+compatibility_date = "2024-01-01"
+
+[triggers]
+crons = ["0 0 * * *", "0 13 * * *"]

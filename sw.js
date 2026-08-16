@@ -1,29 +1,40 @@
 /* sw.js — Service Worker
    Handles:
-   1. Offline caching of the app shell (cache-first for static assets)
+   1. Offline caching of the app shell (network-first, cache fallback)
    2. Bible chapter fetch caching (network-first, fallback to cache)
    3. Push notification display and click routing
+
+   NOTE: every path here is RELATIVE. The app is served from a project
+   subpath on GitHub Pages (/Daily-devotional-app/), so absolute paths
+   like '/index.html' resolve to the user root and 404, which made
+   cache.addAll() reject and the whole install fail.
 */
 
-const CACHE_NAME = 'devotional-v1';
+const CACHE_NAME = 'devotional-v2';
 
 const PRECACHE_URLS = [
-  '/',
-  '/index.html',
-  '/styles.css',
-  '/commentary.js',
-  '/app.js',
-  '/firebase-config.js',
-  '/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png'
+  './',
+  './index.html',
+  './styles.css',
+  './commentary.js',
+  './app.js',
+  './firebase-config.js',
+  './manifest.json',
+  './icons/icon-192.png',
+  './icons/icon-512.png'
 ];
 
 /* ── INSTALL: pre-cache app shell ─────────────────────────── */
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(PRECACHE_URLS))
+      /* Cache entries individually: one bad URL must not fail the install. */
+      .then(cache => Promise.all(
+        PRECACHE_URLS.map(url =>
+          cache.add(new Request(url, { cache: 'reload' }))
+            .catch(err => console.warn('[sw] precache skipped', url, err))
+        )
+      ))
       .then(() => self.skipWaiting())
   );
 });
@@ -41,9 +52,11 @@ self.addEventListener('activate', event => {
   );
 });
 
-/* ── FETCH: serve from cache or network ───────────────────── */
+/* ── FETCH: serve from network or cache ───────────────────── */
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
+
+  if (event.request.method !== 'GET') return;
 
   /* Bible API: network-first, cache fallback */
   if (url.hostname === 'bible-api.com') {
@@ -51,34 +64,15 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  /* Firebase and Google: always network */
-  if (url.hostname.includes('firebase') ||
-      url.hostname.includes('googleapis') ||
-      url.hostname.includes('google.com') ||
-      url.hostname.includes('gstatic.com')) {
-    return;
-  }
+  /* Anything cross-origin (Firebase, Google, gstatic, fonts) — never
+     intercept. Auth flows in particular must always hit the network. */
+  if (url.origin !== self.location.origin) return;
 
-  /* App shell: cache-first */
-  if (event.request.method === 'GET') {
-    event.respondWith(cacheFirst(event.request));
-  }
+  /* App shell: network-first so a redeploy (e.g. a changed
+     firebase-config.js) is picked up immediately, with cache as the
+     offline fallback. */
+  event.respondWith(networkFirst(event.request));
 });
-
-async function cacheFirst(request) {
-  const cached = await caches.match(request);
-  if (cached) return cached;
-  try {
-    const response = await fetch(request);
-    if (response.ok) {
-      const cache = await caches.open(CACHE_NAME);
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch {
-    return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
-  }
-}
 
 async function networkFirst(request) {
   try {
@@ -91,6 +85,13 @@ async function networkFirst(request) {
   } catch {
     const cached = await caches.match(request);
     if (cached) return cached;
+
+    /* Navigations offline: fall back to the cached app shell. */
+    if (request.mode === 'navigate') {
+      const shell = await caches.match('./index.html');
+      if (shell) return shell;
+    }
+
     return new Response(JSON.stringify({ error: 'offline' }), {
       status: 503,
       headers: { 'Content-Type': 'application/json' }
@@ -109,11 +110,11 @@ self.addEventListener('push', event => {
   const options = {
     body: data.body,
     tag: data.tag,
-    icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
+    icon: './icons/icon-192.png',
+    badge: './icons/icon-192.png',
     vibrate: [200, 100, 200],
     requireInteraction: false,
-    data: { url: data.url || '/' }
+    data: { url: data.url || './' }
   };
 
   event.waitUntil(
@@ -125,7 +126,11 @@ self.addEventListener('push', event => {
 self.addEventListener('notificationclick', event => {
   event.notification.close();
 
-  const targetUrl = (event.notification.data && event.notification.data.url) || '/';
+  /* Resolve against the SW scope so this works on a project subpath. */
+  const targetUrl = new URL(
+    (event.notification.data && event.notification.data.url) || './',
+    self.registration.scope
+  ).href;
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true })

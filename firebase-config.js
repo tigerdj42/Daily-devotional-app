@@ -131,13 +131,16 @@ window.FB = (() => {
   }
 
   /* ── reflections ────────────────────────────────────────── */
+  /* NOTE: Firestore document paths must have an EVEN number of segments.
+     `reflections/{uid}/{day}` is 3 segments and throws synchronously, so
+     days live in a `days` subcollection: `reflections/{uid}/days/{day}`. */
   function getReflection(uid, day) {
-    return _db.doc(`reflections/${uid}/${day}`).get()
+    return _db.doc(`reflections/${uid}/days/${day}`).get()
       .then(snap => snap.exists ? snap.data() : null);
   }
 
   function saveReflection(uid, day, text) {
-    return _db.doc(`reflections/${uid}/${day}`).set({
+    return _db.doc(`reflections/${uid}/days/${day}`).set({
       text,
       dayNumber: day,
       savedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -150,13 +153,14 @@ window.FB = (() => {
   }
 
   /* ── milestones ─────────────────────────────────────────── */
+  /* Same even-segment rule as reflections: `milestones/{uid}/items/{id}`. */
   function getMilestone(uid, id) {
-    return _db.doc(`milestones/${uid}/${id}`).get()
+    return _db.doc(`milestones/${uid}/items/${id}`).get()
       .then(snap => snap.exists && snap.data().reached === true);
   }
 
   function saveMilestone(uid, id) {
-    return _db.doc(`milestones/${uid}/${id}`).set({
+    return _db.doc(`milestones/${uid}/items/${id}`).set({
       reached: true,
       reachedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
