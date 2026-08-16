@@ -9,6 +9,7 @@ const TOTAL_DAYS = 130;
 const LS_DARK    = 'devotional_dark';
 const LS_NOTIF_DISMISSED = 'notif_banner_dismissed';
 const LS_IOS_DISMISSED   = 'ios_banner_dismissed';
+const LS_FONT_SCALE      = 'fontScale';
 const BIBLE_API  = 'https://bible-api.com';
 
 /* NT chapter layout: [bookName, chapCount] */
@@ -127,10 +128,20 @@ const dom = {
   btnSignout:        $('btn-signout'),
 };
 
+/* ── FONT SCALE ──────────────────────────────────────────── */
+function applyFontScale(scale) {
+  document.documentElement.style.setProperty('--font-scale', scale);
+  localStorage.setItem(LS_FONT_SCALE, scale);
+  document.querySelectorAll('.font-size-btn').forEach(btn => {
+    btn.classList.toggle('selected', parseFloat(btn.dataset.scale) === scale);
+  });
+}
+
 /* ── BOOT ────────────────────────────────────────────────── */
-(function boot() {
+(async function boot() {
   buildBookMeta();
   applyDarkMode(localStorage.getItem(LS_DARK) === 'true');
+  applyFontScale(parseFloat(localStorage.getItem(LS_FONT_SCALE) || '1'));
   registerServiceWorker();
 
   const ok = window.FB.init();
@@ -145,6 +156,13 @@ const dom = {
 
   wireAuthEvents();
   wireSettingsEvents();
+
+  /* Handle result of a redirect sign-in (standalone PWA mode) */
+  try {
+    await firebase.auth().getRedirectResult();
+  } catch (e) {
+    console.warn('[auth] redirect result error:', e);
+  }
 
   window.FB.onAuthChange(user => {
     if (user) {
@@ -225,11 +243,20 @@ function registerServiceWorker() {
 /* ── AUTH EVENTS ─────────────────────────────────────────── */
 function wireAuthEvents() {
   dom.btnGoogleSignin.addEventListener('click', async () => {
+    const isStandalone = window.navigator.standalone === true ||
+      window.matchMedia('(display-mode: standalone)').matches;
+
     dom.btnGoogleSignin.disabled = true;
-    dom.btnGoogleSignin.textContent = 'Signing in…';
+    dom.btnGoogleSignin.textContent = isStandalone ? 'Redirecting…' : 'Signing in…';
     try {
-      await window.FB.signInWithGoogle();
-      // onAuthChange fires → loadUserData
+      if (isStandalone) {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        await firebase.auth().signInWithRedirect(provider);
+        /* Page navigates away — execution stops here */
+      } else {
+        await window.FB.signInWithGoogle();
+        /* onAuthChange fires → loadUserData */
+      }
     } catch (e) {
       console.error(e);
       dom.btnGoogleSignin.disabled = false;
@@ -822,6 +849,10 @@ function closeMilestoneModal() {
 /* ── SETTINGS MODAL ──────────────────────────────────────── */
 function wireSettingsEvents() {
   dom.btnSaveFirebaseCfg.addEventListener('click', saveFirebaseConfig);
+
+  document.querySelectorAll('.font-size-btn').forEach(btn => {
+    btn.addEventListener('click', () => applyFontScale(parseFloat(btn.dataset.scale)));
+  });
 }
 
 function openSettings() {
@@ -837,6 +868,11 @@ function openSettings() {
 
   dom.toggleDark.checked = state.isDark;
   dom.toggleNotif.checked = state.notifEnabled;
+
+  const currentScale = parseFloat(localStorage.getItem(LS_FONT_SCALE) || '1');
+  document.querySelectorAll('.font-size-btn').forEach(btn => {
+    btn.classList.toggle('selected', parseFloat(btn.dataset.scale) === currentScale);
+  });
 
   if (state.profile) {
     dom.settingsAccountName.textContent = state.profile.name || '';
