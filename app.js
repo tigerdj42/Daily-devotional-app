@@ -12,12 +12,12 @@
 */
 const PROFILES = [
   { id: 'shaun', name: 'Shaun', emoji: '👨' },
-  { id: 'wife',  name: 'Wife',  emoji: '👩' },
+  { id: 'wife',  name: 'Qihui', emoji: '👩' },
 ];
 
-/* Shared passcode. Not a security boundary — it only stops someone
-   tapping the wrong profile by accident. */
-const SHARED_PIN = '1234';
+/* Shared passcode. Not a security boundary — it ships in public client
+   JS, so it only stops someone tapping the wrong profile by accident. */
+const SHARED_PIN = '4422';
 /* ════════════════════════════════════════════════════════ */
 
 /* ── CONSTANTS ───────────────────────────────────────────── */
