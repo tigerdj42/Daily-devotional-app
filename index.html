@@ -35,7 +35,11 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <!-- App styles -->
-  <link rel="stylesheet" href="styles.css">
+  <!-- ?v= is a cache buster. index.html is served no-cache, so bumping
+       this string forces a fresh fetch of the asset even on a browser
+       still holding an older copy under a long max-age. Bump it on every
+       deploy that changes app.js / styles.css / commentary.js. -->
+  <link rel="stylesheet" href="styles.css?v=20260817b">
 
   <!-- Firebase v10 compat (credentials set at runtime via Settings) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -346,11 +350,11 @@
 </div><!-- /modal-settings -->
 
 <!-- Pre-generated commentary data -->
-<script src="commentary.js"></script>
+<script src="commentary.js?v=20260817b"></script>
 <!-- Firebase helpers -->
-<script src="firebase-config.js"></script>
+<script src="firebase-config.js?v=20260817b"></script>
 <!-- Main app logic -->
-<script src="app.js"></script>
+<script src="app.js?v=20260817b"></script>
 
 </body>
 </html>

@@ -10,18 +10,23 @@
    cache.addAll() reject and the whole install fail.
 */
 
-const CACHE_NAME = 'devotional-v2';
+/* Bump ASSET_VERSION together with the ?v= strings in index.html, and
+   bump CACHE_NAME so previously cached copies are dropped on activate. */
+const ASSET_VERSION = '20260817b';
+const CACHE_NAME = 'devotional-v3-' + ASSET_VERSION;
 
 const PRECACHE_URLS = [
   './',
   './index.html',
-  './styles.css',
-  './commentary.js',
-  './app.js',
-  './firebase-config.js',
   './manifest.json',
   './icons/icon-192.png',
-  './icons/icon-512.png'
+  './icons/icon-512.png',
+  /* Versioned to match what index.html actually requests, so the
+     precached entry is the one the page uses offline. */
+  './styles.css?v=' + ASSET_VERSION,
+  './commentary.js?v=' + ASSET_VERSION,
+  './app.js?v=' + ASSET_VERSION,
+  './firebase-config.js?v=' + ASSET_VERSION
 ];
 
 /* ── INSTALL: pre-cache app shell ─────────────────────────── */
