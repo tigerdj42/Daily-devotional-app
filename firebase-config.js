@@ -8,7 +8,7 @@ window.FB = (() => {
   /* ── hardcoded config ──────────────────────────────────── */
   const HARDCODED_CONFIG = {
     apiKey: "AIzaSyCyAw0TqXRcwKLieUcwZzck89EXqr3wG7Q",
-    authDomain: "tigerdj42.github.io",
+    authDomain: "daily-devotional-app-56935.web.app",
     projectId: "daily-devotional-app-56935",
     storageBucket: "daily-devotional-app-56935.firebasestorage.app",
     messagingSenderId: "1020388462347",
