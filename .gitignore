@@ -1,0 +1,13 @@
+# Firebase service account key — contains private credentials
+serviceAccount.json
+
+# Cloudflare Wrangler build output
+.wrangler/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.swp
