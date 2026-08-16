@@ -1,6 +1,15 @@
 /* firebase-config.js
    Firebase v10 (compat mode via CDN).
-   Hardcoded configuration to prevent manual configuration setup prompts.
+
+   No Google Sign-In: identity comes from the in-app profile picker
+   (see PROFILES in app.js), so there are no popups or redirects — which
+   is what broke sign-in inside an iOS standalone PWA.
+
+   Firebase Auth is still loaded, but ONLY for a silent anonymous session.
+   That session is never shown to the user; it exists so the Firestore
+   rules can require `request.auth != null` instead of being open to the
+   whole internet. Data is keyed by profile id, not by the anonymous uid,
+   so a different uid per device does not affect syncing.
 */
 
 window.FB = (() => {
@@ -42,169 +51,78 @@ window.FB = (() => {
     }
   }
 
-  /* ── auth ───────────────────────────────────────────────── */
-  function signInWithGoogle() {
-    if (!_auth) throw new Error('Firebase not initialized');
-    const provider = new firebase.auth.GoogleAuthProvider();
-    return _auth.signInWithPopup(provider)
-      .then(result => ({
-        uid: result.user.uid,
-        email: result.user.email,
-        displayName: result.user.displayName
-      }));
-  }
+  /* ── silent anonymous session ───────────────────────────── */
+  /* Resolves once an anonymous user exists. Purely a security gate —
+     no UI, no redirect, no popup, so it works in an iOS standalone PWA. */
+  function ensureSession() {
+    if (!_auth) return Promise.reject(new Error('Firebase not initialized'));
+    if (_auth.currentUser) return Promise.resolve(_auth.currentUser);
 
-  function signOut() {
-    if (!_auth) return Promise.resolve();
-    return _auth.signOut();
-  }
-
-  function onAuthChange(fn) {
-    if (!_auth) { fn(null); return () => {}; }
-    return _auth.onAuthStateChanged(fn);
-  }
-
-  /* ── user profile ───────────────────────────────────────── */
-  function getProfile(uid) {
-    return _db.doc(`users/${uid}`).get()
-      .then(snap => snap.exists ? snap.data() : null);
-  }
-
-  function saveProfile(uid, { name, role }) {
-    return _db.doc(`users/${uid}`).set({ name, role, createdAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
-  }
-
-  /* ── pair linking ───────────────────────────────────────── */
-  async function getPairId(uid) {
-    /* check husband slot */
-    const hSnap = await _db.collection('pair')
-      .where('husbandUid', '==', uid).limit(1).get();
-    if (!hSnap.empty) return hSnap.docs[0].id;
-
-    /* check wife slot */
-    const wSnap = await _db.collection('pair')
-      .where('wifeUid', '==', uid).limit(1).get();
-    if (!wSnap.empty) return wSnap.docs[0].id;
-
-    return null;
-  }
-
-  async function createOrJoinPair(uid, role) {
-    /* already in a pair? */
-    const existing = await getPairId(uid);
-    if (existing) return existing;
-
-    if (role === 'husband') {
-      /* create new pair, husband slot */
-      const ref = await _db.collection('pair').add({
-        husbandUid: uid,
-        wifeUid: null,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    return new Promise((resolve, reject) => {
+      const unsub = _auth.onAuthStateChanged(user => {
+        if (user) { unsub(); resolve(user); }
       });
-      return ref.id;
-    } else {
-      /* wife: find an open slot (husbandUid exists, wifeUid is null) */
-      const open = await _db.collection('pair')
-        .where('wifeUid', '==', null).limit(1).get();
-      if (!open.empty) {
-        const pairRef = open.docs[0].ref;
-        await pairRef.update({ wifeUid: uid });
-        return open.docs[0].id;
-      }
-      /* no open slot — create wife-first pair */
-      const ref = await _db.collection('pair').add({
-        husbandUid: null,
-        wifeUid: uid,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      return ref.id;
-    }
-  }
-
-  async function getPartnerUid(uid, pairId) {
-    const snap = await _db.doc(`pair/${pairId}`).get();
-    if (!snap.exists) return null;
-    const data = snap.data();
-    if (data.husbandUid === uid) return data.wifeUid || null;
-    if (data.wifeUid === uid) return data.husbandUid || null;
-    return null;
+      _auth.signInAnonymously().catch(err => { unsub(); reject(err); });
+    });
   }
 
   /* ── reflections ────────────────────────────────────────── */
-  /* NOTE: Firestore document paths must have an EVEN number of segments.
-     `reflections/{uid}/{day}` is 3 segments and throws synchronously, so
-     days live in a `days` subcollection: `reflections/{uid}/days/{day}`. */
-  function getReflection(uid, day) {
-    return _db.doc(`reflections/${uid}/days/${day}`).get()
+  /* Firestore document paths need an EVEN number of segments, so each
+     profile's days live in a `days` subcollection. */
+  function getReflection(profileId, day) {
+    return _db.doc(`reflections/${profileId}/days/${day}`).get()
       .then(snap => snap.exists ? snap.data() : null);
   }
 
-  function saveReflection(uid, day, text) {
-    return _db.doc(`reflections/${uid}/days/${day}`).set({
+  function saveReflection(profileId, day, text, name) {
+    /* `name` is stored on the document so the Our Thoughts panel can
+       label each reflection without any auth display name. */
+    return _db.doc(`reflections/${profileId}/days/${day}`).set({
       text,
+      name,
+      profileId,
       dayNumber: day,
       savedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
   }
 
-  function getPartnerReflection(partnerUid, day) {
-    if (!partnerUid) return Promise.resolve(null);
-    return getReflection(partnerUid, day);
-  }
-
   /* ── milestones ─────────────────────────────────────────── */
-  /* Same even-segment rule as reflections: `milestones/{uid}/items/{id}`. */
-  function getMilestone(uid, id) {
-    return _db.doc(`milestones/${uid}/items/${id}`).get()
+  function getMilestone(profileId, id) {
+    return _db.doc(`milestones/${profileId}/items/${id}`).get()
       .then(snap => snap.exists && snap.data().reached === true);
   }
 
-  function saveMilestone(uid, id) {
-    return _db.doc(`milestones/${uid}/items/${id}`).set({
+  function saveMilestone(profileId, id) {
+    return _db.doc(`milestones/${profileId}/items/${id}`).set({
       reached: true,
       reachedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
   }
 
   /* ── push subscriptions ─────────────────────────────────── */
-  function savePushSubscription(uid, sub) {
+  function savePushSubscription(profileId, sub) {
     const { endpoint, keys } = sub.toJSON ? sub.toJSON() : sub;
-    return _db.doc(`subscriptions/${uid}`).set({
+    return _db.doc(`subscriptions/${profileId}`).set({
       endpoint,
       keys,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
   }
 
-  function deletePushSubscription(uid) {
-    return _db.doc(`subscriptions/${uid}`).delete();
+  function deletePushSubscription(profileId) {
+    return _db.doc(`subscriptions/${profileId}`).delete();
   }
 
   /* ── settings helpers ───────────────────────────────────── */
-  function applyConfig() {
-    _initialized = false;
-    _app = null; _auth = null; _db = null;
-    return init();
-  }
-
   function getStoredConfig() { return HARDCODED_CONFIG; }
 
   /* ── public API ─────────────────────────────────────────── */
   return {
     init,
-    applyConfig,
+    ensureSession,
     getStoredConfig,
-    signInWithGoogle,
-    signOut,
-    onAuthChange,
-    getProfile,
-    saveProfile,
-    getPairId,
-    createOrJoinPair,
-    getPartnerUid,
     getReflection,
     saveReflection,
-    getPartnerReflection,
     getMilestone,
     saveMilestone,
     savePushSubscription,

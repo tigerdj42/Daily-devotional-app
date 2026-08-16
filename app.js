@@ -3,7 +3,25 @@
    Depends on: commentary.js (window.commentaryData), firebase-config.js (window.FB)
 */
 
+/* ══════════════════════════════════════════════════════════
+   FAMILY CONFIG — edit these two things and redeploy.
+   ══════════════════════════════════════════════════════════
+   `id` is the Firestore key for that person's reflections. Once
+   someone has saved reflections, DO NOT change their id or those
+   entries will look empty. Names and emoji are safe to change.
+*/
+const PROFILES = [
+  { id: 'shaun', name: 'Shaun', emoji: '👨' },
+  { id: 'wife',  name: 'Wife',  emoji: '👩' },
+];
+
+/* Shared passcode. Not a security boundary — it only stops someone
+   tapping the wrong profile by accident. */
+const SHARED_PIN = '1234';
+/* ════════════════════════════════════════════════════════ */
+
 /* ── CONSTANTS ───────────────────────────────────────────── */
+const LS_PROFILE = 'currentProfile';
 const START_DATE = new Date('2026-08-17T00:00:00+08:00'); // SGT midnight
 const TOTAL_DAYS = 130;
 const LS_DARK    = 'devotional_dark';
@@ -27,10 +45,7 @@ let BOOK_META = [];
 
 /* ── APP STATE ───────────────────────────────────────────── */
 let state = {
-  user: null,         // { uid, email, displayName }
-  profile: null,      // { name, role }
-  partnerUid: null,
-  pairId: null,
+  profile: null,      // { id, name, emoji } — the chosen PROFILES entry
   currentDay: 1,
   completedDays: new Set(),
   isDark: false,
@@ -53,17 +68,17 @@ const $ = id => document.getElementById(id);
 const dom = {
   screens: {
     auth:  $('screen-auth'),
-    setup: $('screen-setup'),
     main:  $('screen-main'),
   },
-  // auth
-  btnGoogleSignin:   $('btn-google-signin'),
-  authNoConfig:      $('auth-no-config'),
-  btnOpenSettingsAuth: $('btn-open-settings-auth'),
-  // setup
-  setupName:         $('setup-name-input'),
-  roleBtns:          document.querySelectorAll('.role-btn'),
-  btnSetupSave:      $('btn-setup-save'),
+  // profile picker
+  pickerStepProfile: $('picker-step-profile'),
+  pickerStepPin:     $('picker-step-pin'),
+  profileList:       $('profile-list'),
+  pinProfileName:    $('pin-profile-name'),
+  pinDots:           $('pin-dots'),
+  pinError:          $('pin-error'),
+  pinBack:           $('pin-back'),
+  pinDelete:         $('pin-delete'),
   // header
   hamburgerBtn:      $('hamburger-btn'),
   mobileHeaderTitle: $('mobile-header-title'),
@@ -112,20 +127,10 @@ const dom = {
   btnMilestoneClose: $('btn-milestone-close'),
   modalSettings:     $('modal-settings'),
   btnSettingsClose:  $('btn-settings-close'),
-  cfgApiKey:         $('cfg-api-key'),
-  cfgAuthDomain:     $('cfg-auth-domain'),
-  cfgProjectId:      $('cfg-project-id'),
-  cfgStorageBucket:  $('cfg-storage-bucket'),
-  cfgMsgSenderId:    $('cfg-messaging-sender-id'),
-  cfgAppId:          $('cfg-app-id'),
-  cfgVapidKey:       $('cfg-vapid-key'),
-  btnSaveFirebaseCfg: $('btn-save-firebase-config'),
-  firebaseCfgStatus: $('firebase-config-status'),
   toggleDark:        $('toggle-dark'),
   toggleNotif:       $('toggle-notif'),
   settingsAccountName:  $('settings-account-name'),
-  settingsAccountEmail: $('settings-account-email'),
-  btnSignout:        $('btn-signout'),
+  btnSwitchProfile:  $('btn-switch-profile'),
 };
 
 /* ── FONT SCALE ──────────────────────────────────────────── */
@@ -144,35 +149,149 @@ function applyFontScale(scale) {
   applyFontScale(parseFloat(localStorage.getItem(LS_FONT_SCALE) || '1'));
   registerServiceWorker();
 
-  const ok = window.FB.init();
-  if (!ok) {
-    showScreen('auth');
-    dom.authNoConfig.classList.remove('hidden');
-    dom.btnGoogleSignin.style.display = 'none';
-    wireAuthEvents();
-    wireSettingsEvents();
+  window.FB.init();
+  wireProfilePicker();
+  wireSettingsEvents();
+
+  /* Silent anonymous session — no UI, no redirect, no popup. It only
+     exists so Firestore rules can require an authenticated caller. */
+  try {
+    await window.FB.ensureSession();
+  } catch (e) {
+    console.error('[auth] anonymous session failed:', e);
+    showPickerError('Could not connect. Check your connection and reload. (' + (e.code || e.message) + ')');
     return;
   }
 
-  wireAuthEvents();
-  wireSettingsEvents();
-
-  /* Handle result of a redirect sign-in (standalone PWA mode) */
-  try {
-    await firebase.auth().getRedirectResult();
-  } catch (e) {
-    console.warn('[auth] redirect result error:', e);
+  /* Already chose a profile on this device? Go straight in. */
+  const saved = readSavedProfile();
+  if (saved) {
+    state.profile = saved;
+    loadProfileData();
+  } else {
+    showProfilePicker();
   }
-
-  window.FB.onAuthChange(user => {
-    if (user) {
-      state.user = { uid: user.uid, email: user.email, displayName: user.displayName };
-      loadUserData();
-    } else {
-      showScreen('auth');
-    }
-  });
 })();
+
+/* ── PROFILE PERSISTENCE ─────────────────────────────────── */
+function readSavedProfile() {
+  try {
+    const raw = localStorage.getItem(LS_PROFILE);
+    if (!raw) return null;
+    const saved = JSON.parse(raw);
+    /* Re-resolve against PROFILES so renamed/removed entries stay correct. */
+    return PROFILES.find(p => p.id === saved.id) || null;
+  } catch { return null; }
+}
+
+function saveProfileChoice(profile) {
+  localStorage.setItem(LS_PROFILE, JSON.stringify({ id: profile.id, name: profile.name }));
+}
+
+/* ── PROFILE PICKER + PIN ────────────────────────────────── */
+let pinEntry = '';
+let pendingProfile = null;
+
+function showProfilePicker() {
+  showScreen('auth');
+  pinEntry = '';
+  pendingProfile = null;
+  dom.pickerStepPin.classList.add('hidden');
+  dom.pickerStepProfile.classList.remove('hidden');
+  dom.pinError.textContent = '';
+}
+
+function showPickerError(msg) {
+  showScreen('auth');
+  dom.pinError.textContent = msg;
+  dom.pickerStepPin.classList.remove('hidden');
+  dom.pickerStepProfile.classList.add('hidden');
+}
+
+function wireProfilePicker() {
+  /* Build one button per profile */
+  dom.profileList.innerHTML = '';
+  PROFILES.forEach((p, idx) => {
+    const btn = document.createElement('button');
+    btn.className = 'profile-btn' + (idx % 2 === 1 ? ' alt' : '');
+    btn.innerHTML =
+      `<span class="profile-emoji" aria-hidden="true">${p.emoji}</span>
+       <span class="profile-name">${escHtml(p.name)}</span>`;
+    btn.addEventListener('click', () => beginPin(p));
+    dom.profileList.appendChild(btn);
+  });
+
+  /* PIN pad */
+  document.querySelectorAll('.pin-key[data-key]').forEach(k => {
+    k.addEventListener('click', () => pushPinDigit(k.dataset.key));
+  });
+  dom.pinDelete.addEventListener('click', () => {
+    pinEntry = pinEntry.slice(0, -1);
+    renderPinDots();
+  });
+  dom.pinBack.addEventListener('click', showProfilePicker);
+
+  /* Hardware keyboard (desktop convenience) */
+  document.addEventListener('keydown', e => {
+    if (dom.pickerStepPin.classList.contains('hidden')) return;
+    if (/^[0-9]$/.test(e.key)) pushPinDigit(e.key);
+    else if (e.key === 'Backspace') { pinEntry = pinEntry.slice(0, -1); renderPinDots(); }
+    else if (e.key === 'Escape') showProfilePicker();
+  });
+}
+
+function beginPin(profile) {
+  pendingProfile = profile;
+  pinEntry = '';
+  dom.pinProfileName.textContent = profile.name;
+  dom.pinError.textContent = '';
+  dom.pickerStepProfile.classList.add('hidden');
+  dom.pickerStepPin.classList.remove('hidden');
+  renderPinDots();
+}
+
+function renderPinDots() {
+  const len = SHARED_PIN.length;
+  dom.pinDots.innerHTML = '';
+  for (let i = 0; i < len; i++) {
+    const dot = document.createElement('span');
+    dot.className = 'pin-dot' + (i < pinEntry.length ? ' filled' : '');
+    dom.pinDots.appendChild(dot);
+  }
+}
+
+function pushPinDigit(d) {
+  if (pinEntry.length >= SHARED_PIN.length) return;
+  pinEntry += d;
+  dom.pinError.textContent = '';
+  renderPinDots();
+
+  if (pinEntry.length === SHARED_PIN.length) {
+    /* Small delay so the last dot is visibly filled before we move on. */
+    setTimeout(submitPin, 150);
+  }
+}
+
+function submitPin() {
+  if (pinEntry !== SHARED_PIN) {
+    dom.pinError.textContent = 'Incorrect PIN — try again';
+    pinEntry = '';
+    renderPinDots();
+    if (navigator.vibrate) navigator.vibrate(120);
+    return;
+  }
+  state.profile = pendingProfile;
+  saveProfileChoice(pendingProfile);
+  loadProfileData();
+}
+
+function switchProfile() {
+  localStorage.removeItem(LS_PROFILE);
+  state.profile = null;
+  state.completedDays = new Set();
+  closeSettings();
+  showProfilePicker();
+}
 
 /* ── BUILD BOOK META ─────────────────────────────────────── */
 function buildBookMeta() {
@@ -242,145 +361,34 @@ function registerServiceWorker() {
   }
 }
 
-/* ── AUTH EVENTS ─────────────────────────────────────────── */
-const GOOGLE_BTN_HTML = `
-  <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-    <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
-    <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
-    <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
-    <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/>
-  </svg>
-  Sign in with Google`;
-
-function resetGoogleButton() {
-  dom.btnGoogleSignin.disabled = false;
-  dom.btnGoogleSignin.innerHTML = GOOGLE_BTN_HTML;
-}
-
-function wireAuthEvents() {
-  dom.btnGoogleSignin.addEventListener('click', async () => {
-    const isStandalone = window.navigator.standalone === true ||
-      window.matchMedia('(display-mode: standalone)').matches;
-
-    clearAuthError();
-    dom.btnGoogleSignin.disabled = true;
-    dom.btnGoogleSignin.textContent = isStandalone ? 'Redirecting…' : 'Signing in…';
-    try {
-      if (isStandalone) {
-        const provider = new firebase.auth.GoogleAuthProvider();
-        await firebase.auth().signInWithRedirect(provider);
-        /* Page navigates away — execution stops here */
-      } else {
-        await window.FB.signInWithGoogle();
-        /* onAuthChange fires → loadUserData */
-      }
-    } catch (e) {
-      console.error(e);
-      resetGoogleButton();
-    }
-  });
-
-  dom.btnOpenSettingsAuth.addEventListener('click', () => openSettings());
-}
-
-/* ── LOAD USER DATA (post sign-in) ───────────────────────── */
-async function loadUserData() {
+/* ── LOAD DATA FOR THE CHOSEN PROFILE ────────────────────── */
+async function loadProfileData() {
   try {
-    const profile = await window.FB.getProfile(state.user.uid);
-    if (!profile) {
-      showSetupScreen();
-      return;
-    }
-    state.profile = profile;
-    state.pairId = await window.FB.createOrJoinPair(state.user.uid, profile.role);
-    state.partnerUid = await window.FB.getPartnerUid(state.user.uid, state.pairId);
     await loadCompletedDays();
     state.currentDay = todayDayNumber();
     showMainApp();
   } catch (e) {
-    /* Never leave the user on a frozen "Signing in…" screen: surface the
-       reason and let them retry. */
-    console.error('[app] loadUserData error:', e);
-    showAuthError(e);
+    /* Never strand the user on the picker with no explanation. */
+    console.error('[app] loadProfileData error:', e);
+    showPickerError('Could not load your reflections: ' + (e.message || e.code || 'unknown error'));
   }
-}
-
-/* Show the auth screen again with a readable error and a usable button. */
-function showAuthError(err) {
-  const msg = (err && (err.message || err.code)) || 'Unknown error';
-  showScreen('auth');
-  resetGoogleButton();
-  let el = document.getElementById('auth-error');
-  if (!el) {
-    el = document.createElement('p');
-    el.id = 'auth-error';
-    el.style.cssText = 'margin-top:16px; font-size:13px; color:var(--missed,#C0674A); max-width:320px; text-align:center; line-height:1.5;';
-    dom.btnGoogleSignin.parentNode.insertBefore(el, dom.btnGoogleSignin.nextSibling);
-  }
-  el.textContent = `Sign-in succeeded but loading your data failed: ${msg}`;
-}
-
-function clearAuthError() {
-  const el = document.getElementById('auth-error');
-  if (el) el.remove();
 }
 
 async function loadCompletedDays() {
-  /* We infer completion from whether the user has a reflection for each day.
-     A single failed read must not blank the whole app, so failures count as
-     "not completed" rather than rejecting the batch. */
+  /* We infer completion from whether this profile has a reflection for each
+     day. A single failed read must not blank the whole app, so failures
+     count as "not completed" rather than rejecting the batch. */
   const today = todayDayNumber();
   const checks = [];
   for (let d = 1; d <= today; d++) {
     checks.push(
-      window.FB.getReflection(state.user.uid, d)
+      window.FB.getReflection(state.profile.id, d)
         .then(r => (r ? d : null))
         .catch(e => { console.warn('[app] reflection read failed for day', d, e); return null; })
     );
   }
   const results = await Promise.all(checks);
   state.completedDays = new Set(results.filter(Boolean));
-}
-
-/* ── SETUP SCREEN ────────────────────────────────────────── */
-function showSetupScreen() {
-  showScreen('setup');
-
-  let selectedRole = null;
-
-  function validate() {
-    dom.btnSetupSave.disabled = !(dom.setupName.value.trim() && selectedRole);
-  }
-
-  dom.setupName.addEventListener('input', validate);
-
-  dom.roleBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      dom.roleBtns.forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
-      selectedRole = btn.dataset.role;
-      validate();
-    });
-  });
-
-  dom.btnSetupSave.addEventListener('click', async () => {
-    dom.btnSetupSave.disabled = true;
-    dom.btnSetupSave.textContent = 'Saving…';
-    const name = dom.setupName.value.trim();
-    try {
-      await window.FB.saveProfile(state.user.uid, { name, role: selectedRole });
-      state.profile = { name, role: selectedRole };
-      state.pairId = await window.FB.createOrJoinPair(state.user.uid, selectedRole);
-      state.partnerUid = await window.FB.getPartnerUid(state.user.uid, state.pairId);
-      state.completedDays = new Set();
-      state.currentDay = todayDayNumber();
-      showMainApp();
-    } catch (e) {
-      console.error(e);
-      dom.btnSetupSave.disabled = false;
-      dom.btnSetupSave.textContent = 'Start reading →';
-    }
-  });
 }
 
 /* ── MAIN APP INIT ───────────────────────────────────────── */
@@ -428,10 +436,7 @@ function wireMainEvents() {
   });
 
   /* Sign out */
-  dom.btnSignout.addEventListener('click', async () => {
-    await window.FB.signOut();
-    location.reload();
-  });
+  dom.btnSwitchProfile.addEventListener('click', switchProfile);
 
   /* Settings save */
   wireSettingsEvents();
@@ -458,11 +463,12 @@ function closeDrawer() {
 function renderSidebar() {
   const today = todayDayNumber();
   const name = state.profile?.name || '';
-  const role = state.profile?.role || 'husband';
+  /* Alternate the avatar accent by position in PROFILES. */
+  const isAlt = PROFILES.findIndex(p => p.id === state.profile?.id) % 2 === 1;
 
   /* User avatar */
   dom.sidebarUserAv.textContent = name ? name[0].toUpperCase() : '?';
-  if (role === 'wife') dom.sidebarUserAv.classList.add('wife');
+  dom.sidebarUserAv.classList.toggle('wife', isAlt);
   dom.sidebarUserName.textContent = name;
 
   /* Progress */
@@ -738,48 +744,35 @@ function renderBibleContent(chapters, texts) {
 async function renderThoughts(day) {
   dom.thoughtsGrid.innerHTML = '';
 
-  const myUid = state.user.uid;
-  const partnerUid = state.partnerUid;
+  /* One card per family member, in PROFILES order. */
+  const refs = await Promise.all(
+    PROFILES.map(p =>
+      window.FB.getReflection(p.id, day)
+        .catch(e => { console.warn('[app] reflection read failed for', p.id, e); return null; })
+    )
+  );
 
-  const [myRef, partnerRef] = await Promise.all([
-    window.FB.getReflection(myUid, day),
-    partnerUid ? window.FB.getPartnerReflection(partnerUid, day) : null
-  ]);
-
-  /* My card */
-  dom.thoughtsGrid.appendChild(buildThoughtCard({
-    uid: myUid,
-    name: state.profile.name,
-    role: state.profile.role,
-    reflection: myRef,
-    isMe: true,
-    day
-  }));
-
-  /* Partner card */
-  if (partnerUid) {
-    let partnerProfile = null;
-    try { partnerProfile = await window.FB.getProfile(partnerUid); } catch {}
-    const partnerName = partnerProfile?.name || (state.profile.role === 'husband' ? 'Wife' : 'Husband');
-    const partnerRole = partnerProfile?.role || (state.profile.role === 'husband' ? 'wife' : 'husband');
-
+  PROFILES.forEach((p, idx) => {
+    const reflection = refs[idx];
     dom.thoughtsGrid.appendChild(buildThoughtCard({
-      uid: partnerUid,
-      name: partnerName,
-      role: partnerRole,
-      reflection: partnerRef,
-      isMe: false,
+      profileId: p.id,
+      /* Prefer the name saved on the document (Step 6), falling back to
+         the configured name for profiles that haven't written yet. */
+      name: reflection?.name || p.name,
+      alt: idx % 2 === 1,
+      reflection,
+      isMe: p.id === state.profile.id,
       day
     }));
-  }
+  });
 }
 
-function buildThoughtCard({ uid, name, role, reflection, isMe, day }) {
+function buildThoughtCard({ profileId, name, alt, reflection, isMe, day }) {
   const card = document.createElement('div');
   card.className = 'thought-card';
 
   const avEl = document.createElement('div');
-  avEl.className = `thought-av${role === 'wife' ? ' wife' : ''}`;
+  avEl.className = `thought-av${alt ? ' wife' : ''}`;
   avEl.textContent = name ? name[0].toUpperCase() : '?';
   avEl.setAttribute('aria-hidden', 'true');
 
@@ -789,7 +782,7 @@ function buildThoughtCard({ uid, name, role, reflection, isMe, day }) {
 
   const info = document.createElement('div');
   info.innerHTML = `<div class="thought-av-name">${escHtml(name)}</div>
-                    <div class="thought-av-role">${role === 'husband' ? 'Husband' : 'Wife'}</div>`;
+                    <div class="thought-av-role">${isMe ? 'You' : 'Reading together'}</div>`;
   header.appendChild(info);
   card.appendChild(header);
 
@@ -822,7 +815,7 @@ function buildThoughtCard({ uid, name, role, reflection, isMe, day }) {
       saveBtn.classList.add('saving');
       saveBtn.textContent = 'Saving…';
       try {
-        await window.FB.saveReflection(uid, day, text);
+        await window.FB.saveReflection(profileId, day, text, state.profile.name);
         state.completedDays.add(day);
         renderSidebar();
         saveBtn.textContent = 'Saved ✓';
@@ -866,9 +859,9 @@ async function checkMilestones(currentDay) {
   for (const m of MILESTONES) {
     if (!m.check(currentDay)) continue;
     try {
-      const already = await window.FB.getMilestone(state.user.uid, m.id);
+      const already = await window.FB.getMilestone(state.profile.id, m.id);
       if (!already) {
-        await window.FB.saveMilestone(state.user.uid, m.id);
+        await window.FB.saveMilestone(state.profile.id, m.id);
         showMilestoneModal(m);
         break; // show one at a time
       }
@@ -891,24 +884,12 @@ function closeMilestoneModal() {
 
 /* ── SETTINGS MODAL ──────────────────────────────────────── */
 function wireSettingsEvents() {
-  dom.btnSaveFirebaseCfg.addEventListener('click', saveFirebaseConfig);
-
   document.querySelectorAll('.font-size-btn').forEach(btn => {
     btn.addEventListener('click', () => applyFontScale(parseFloat(btn.dataset.scale)));
   });
 }
 
 function openSettings() {
-  /* Pre-fill stored config */
-  const cfg = window.FB.getStoredConfig?.() || {};
-  dom.cfgApiKey.value = cfg.apiKey || '';
-  dom.cfgAuthDomain.value = cfg.authDomain || '';
-  dom.cfgProjectId.value = cfg.projectId || '';
-  dom.cfgStorageBucket.value = cfg.storageBucket || '';
-  dom.cfgMsgSenderId.value = cfg.messagingSenderId || '';
-  dom.cfgAppId.value = cfg.appId || '';
-  dom.cfgVapidKey.value = localStorage.getItem('vapid_key') || '';
-
   dom.toggleDark.checked = state.isDark;
   dom.toggleNotif.checked = state.notifEnabled;
 
@@ -919,7 +900,6 @@ function openSettings() {
 
   if (state.profile) {
     dom.settingsAccountName.textContent = state.profile.name || '';
-    dom.settingsAccountEmail.textContent = state.user?.email || '';
   }
 
   dom.modalSettings.classList.add('open');
@@ -929,37 +909,6 @@ function openSettings() {
 function closeSettings() {
   dom.modalSettings.classList.remove('open');
   dom.modalSettings.setAttribute('aria-hidden', 'true');
-}
-
-async function saveFirebaseConfig() {
-  const cfg = {
-    apiKey:            dom.cfgApiKey.value.trim(),
-    authDomain:        dom.cfgAuthDomain.value.trim(),
-    projectId:         dom.cfgProjectId.value.trim(),
-    storageBucket:     dom.cfgStorageBucket.value.trim(),
-    messagingSenderId: dom.cfgMsgSenderId.value.trim(),
-    appId:             dom.cfgAppId.value.trim(),
-  };
-
-  if (!cfg.apiKey || !cfg.projectId) {
-    dom.firebaseCfgStatus.textContent = 'API Key and Project ID are required.';
-    return;
-  }
-
-  const vapidKey = dom.cfgVapidKey.value.trim();
-  if (vapidKey) localStorage.setItem('vapid_key', vapidKey);
-
-  dom.btnSaveFirebaseCfg.disabled = true;
-  dom.firebaseCfgStatus.textContent = 'Connecting…';
-
-  const ok = window.FB.applyConfig(cfg);
-  if (ok) {
-    dom.firebaseCfgStatus.textContent = 'Connected! Reloading…';
-    setTimeout(() => location.reload(), 1000);
-  } else {
-    dom.firebaseCfgStatus.textContent = 'Could not connect. Double-check your credentials.';
-    dom.btnSaveFirebaseCfg.disabled = false;
-  }
 }
 
 /* ── PUSH NOTIFICATIONS ──────────────────────────────────── */
@@ -1003,7 +952,7 @@ async function requestPushPermission() {
       applicationServerKey: urlBase64ToUint8Array(vapidKey)
     });
 
-    await window.FB.savePushSubscription(state.user.uid, sub);
+    await window.FB.savePushSubscription(state.profile.id, sub);
   } catch (e) {
     console.warn('[push]', e);
     dom.toggleNotif.checked = false;
@@ -1016,7 +965,7 @@ async function unsubscribePush() {
     const sw = await navigator.serviceWorker.ready;
     const sub = await sw.pushManager.getSubscription();
     if (sub) await sub.unsubscribe();
-    await window.FB.deletePushSubscription(state.user.uid);
+    await window.FB.deletePushSubscription(state.profile.id);
     state.notifEnabled = false;
   } catch (e) { console.warn('[push unsubscribe]', e); }
 }
