@@ -5,6 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Daily Devotional</title>
 
+  <!-- Keep the app on the same origin as authDomain.
+       Firebase Hosting serves this site on BOTH *.web.app and
+       *.firebaseapp.com, but sign-in only works on firebaseapp.com:
+         1. it matches authDomain, so Safari doesn't treat the pending-auth
+            state as third-party storage (that's what breaks
+            signInWithRedirect in an iOS standalone PWA), and
+         2. it's the redirect URI registered on the OAuth client —
+            web.app returns redirect_uri_mismatch.
+       Runs before anything else so there's no flash. -->
+  <script>
+    (function () {
+      if (location.hostname === 'daily-devotional-app-56935.web.app') {
+        location.replace('https://daily-devotional-app-56935.firebaseapp.com'
+          + location.pathname + location.search + location.hash);
+      }
+    })();
+  </script>
+
   <!-- PWA -->
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#C4A46B">
