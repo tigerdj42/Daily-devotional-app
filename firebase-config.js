@@ -1,39 +1,20 @@
 /* firebase-config.js
    Firebase v10 (compat mode via CDN).
-   Credentials are stored in localStorage and entered through the
-   Settings modal — nothing is hardcoded here.
-
-   Exports on window.FB:
-     init()               → true | false (config present?)
-     signInWithGoogle()   → Promise<{uid, email, displayName}>
-     signOut()            → Promise
-     onAuthChange(fn)     → unsubscribe fn
-     getProfile(uid)      → Promise<{name, role} | null>
-     saveProfile(uid, {name, role}) → Promise
-     getPairId(uid)       → Promise<string | null>
-     createOrJoinPair(uid, role) → Promise<string>   (pairId)
-     getPartnerUid(uid, pairId)  → Promise<string | null>
-     getReflection(uid, day)     → Promise<{text, savedAt} | null>
-     saveReflection(uid, day, text) → Promise
-     getPartnerReflection(partnerUid, day) → Promise<{text, savedAt} | null>
-     getMilestone(uid, id) → Promise<boolean>
-     saveMilestone(uid, id) → Promise
-     savePushSubscription(uid, sub) → Promise
-     deletePushSubscription(uid)   → Promise
+   Hardcoded configuration to prevent manual configuration setup prompts.
 */
 
 window.FB = (() => {
 
-  /* ── stored config ──────────────────────────────────────── */
-  const LS_KEY = 'fb_config';
-
-  function getConfig() {
-    try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch { return null; }
-  }
-
-  function saveConfig(cfg) {
-    localStorage.setItem(LS_KEY, JSON.stringify(cfg));
-  }
+  /* ── hardcoded config ──────────────────────────────────── */
+  const HARDCODED_CONFIG = {
+    apiKey: "AIzaSyCyAw0TqXRcwKLieUcwZzck89EXqr3wG7Q",
+    authDomain: "daily-devotional-app-56935.firebaseapp.com",
+    projectId: "daily-devotional-app-56935",
+    storageBucket: "daily-devotional-app-56935.firebasestorage.app",
+    messagingSenderId: "1020388462347",
+    appId: "1:1020388462347:web:31a407aec5a7ff16bbdc0e",
+    measurementId: "G-CKMQ8DY67D"
+  };
 
   /* ── state ──────────────────────────────────────────────── */
   let _app = null;
@@ -43,14 +24,11 @@ window.FB = (() => {
 
   /* ── init ───────────────────────────────────────────────── */
   function init() {
-    const cfg = getConfig();
-    if (!cfg || !cfg.apiKey) return false;
-
     if (_initialized) return true;
 
     try {
       if (firebase.apps.length === 0) {
-        _app = firebase.initializeApp(cfg);
+        _app = firebase.initializeApp(HARDCODED_CONFIG);
       } else {
         _app = firebase.app();
       }
@@ -199,14 +177,13 @@ window.FB = (() => {
   }
 
   /* ── settings helpers ───────────────────────────────────── */
-  function applyConfig(cfg) {
-    saveConfig(cfg);
+  function applyConfig() {
     _initialized = false;
     _app = null; _auth = null; _db = null;
     return init();
   }
 
-  function getStoredConfig() { return getConfig(); }
+  function getStoredConfig() { return HARDCODED_CONFIG; }
 
   /* ── public API ─────────────────────────────────────────── */
   return {
